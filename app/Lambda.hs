@@ -1,12 +1,15 @@
 {-# LANGUAGE BlockArguments, LambdaCase, OverloadedStrings #-}
 
-module Lambda (main) where
+module Lambda where
 
-import Control.Monad (forever)
+import Data.List (foldl')
+import Data.Functor.Identity (runIdentity)
+import System.IO (hFlush, stdout)
 
-import Text.Parsec (Parsec, runParser, (<|>), char, many1, alphaNum, spaces, eof)
+import Text.Parsec (Parsec, runParser, (<|>), char, try, many1, alphaNum, spaces, eof)
 
-import Control.Monad.State (State, evalState)
+import Control.Monad.Trans (lift)
+import Control.Monad.State (State, StateT, evalStateT, mapStateT)
 import qualified Control.Monad.State as State
 
 import Data.Text (Text)
@@ -14,13 +17,22 @@ import qualified Data.Text as Text
 import qualified Data.Text.IO as IO
 
 main :: IO ()
-main = forever do
-  str <- IO.getLine
-  case runParser parseInput () "input" str of
-    Left err -> print err
-    Right term ->
-      let res = evalState (reduce term) 0
-      in IO.putStrLn (pretty Outer res)
+main = evalStateT (loop []) 0
+
+loop :: [(Name, Term)] -> StateT Int IO ()
+loop env = do
+  lift (IO.putStr "> " >> hFlush stdout)
+  str <- lift IO.getLine
+  case runParser parseCommand () "input" str of
+    Left err -> do
+      lift (print err)
+      loop env
+    Right (Evaluate term) -> do
+      res <- mapStateT (return . runIdentity) (reduce (withEnv env term))
+      lift (IO.putStrLn (pretty Outer res))
+      loop env
+    Right (Define name term) -> do
+      loop ((name, term) : env)
 
 data Name
   = Name Text
@@ -33,14 +45,32 @@ data Term
   | App Term Term
   deriving (Eq)
 
+data Command
+  = Define Name Term
+  | Evaluate Term
+
 type Parser = Parsec Text ()
 
-parseInput :: Parser Term
-parseInput = do
+withEnv :: [(Name, Term)] -> Term -> Term
+withEnv env term = foldl' addDef term env
+  where addDef t (n, v) = App (Lam n t) v
+
+symbol :: Char -> Parser ()
+symbol c = char c >> spaces
+
+parseCommand :: Parser Command
+parseCommand = do
   spaces
-  term <- parseTerm
+  cmd <- try parseDefine
+    <|> (Evaluate <$> parseTerm)
   eof
-  return term
+  return cmd
+
+parseDefine :: Parser Command
+parseDefine = do
+  name <- parseName
+  symbol '='
+  Define name <$> parseTerm
 
 parseTerm :: Parser Term
 parseTerm = parseApp =<< parseFactor
@@ -65,25 +95,19 @@ parseName = do
 
 parseLam :: Parser Term
 parseLam = do
-  _ <- char '\\'
-  spaces
+  symbol '\\'
   name <- parseName
-  _ <- char '.'
-  spaces
+  symbol '.'
   Lam name <$> parseTerm
 
 parseParens :: Parser Term
 parseParens = do
-  _ <- char '('
-  spaces
+  symbol '('
   term <- parseTerm
-  _ <- char ')'
-  spaces
+  symbol ')'
   return term
 
-type Reduce = State Int
-
-fresh :: Name -> Reduce Name
+fresh :: Name -> State Int Name
 fresh name = do
   new <- State.get
   State.modify (1+)
@@ -91,7 +115,7 @@ fresh name = do
     Name text -> return (NameId text new)
     NameId text _ -> return (NameId text new)
 
-reduce :: Term -> Reduce Term
+reduce :: Term -> State Int Term
 reduce = \case
   Var n -> return (Var n)
   -- reduce body, eta-reduce if possible
@@ -108,7 +132,7 @@ reduce = \case
       Lam n r -> reduce =<< subst n t2' r
       _ -> return (App t1' t2')
 
-subst :: Name -> Term -> Term -> Reduce Term
+subst :: Name -> Term -> Term -> State Int Term
 subst n t = \case
   Var n1
     | n1 == n -> return t
