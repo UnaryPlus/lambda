@@ -1,5 +1,7 @@
 {-# LANGUAGE BlockArguments, LambdaCase #-}
 
+module CoC where
+
 import qualified Data.Map as Map
 import Data.Map (Map)
 
