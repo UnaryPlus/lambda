@@ -95,7 +95,7 @@ parseName = do
 
 parseLam :: Parser Term
 parseLam = do
-  symbol '\\'
+  symbol '\\' <|> symbol 'λ'
   name <- parseName
   symbol '.'
   Lam name <$> parseTerm
@@ -164,7 +164,7 @@ pretty ctx = \case
   Var n -> prettyName n
   Lam n r ->
     parensIf (ctx == AppLeft || ctx == AppRight) $
-    "\\" <> prettyName n <> ". " <> pretty LamRight r
+    "λ" <> prettyName n <> ". " <> pretty LamRight r
   App t1 t2 ->
     parensIf (ctx == AppRight) $
     pretty AppLeft t1 <> " " <> pretty AppRight t2
