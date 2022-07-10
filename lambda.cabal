@@ -11,10 +11,12 @@ license:            MIT
 executable lambda
     hs-source-dirs:   app
     main-is:          Main.hs
+    other-modules:    CoC
 
     build-depends:    base ^>=4.14.1.0,
                       parsec,
                       text,
+                      containers,
                       mtl
 
     default-language: Haskell2010

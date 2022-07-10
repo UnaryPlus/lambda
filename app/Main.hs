@@ -9,13 +9,14 @@ import qualified Control.Monad.State as State
 
 import Data.Text (Text)
 import qualified Data.Text as Text
-
 import qualified Data.Text.IO as IO
+
+import Debug.Trace
 
 main :: IO ()
 main = do
   str <- IO.getLine
-  case runParser parseTerm () "input" str of
+  case runParser parseInput () "input" str of
     Left err -> print err
     Right term ->
       let res = evalState (reduce term) 0
@@ -31,6 +32,7 @@ data Term
   = Var Name
   | Lam Name Term
   | App Term Term
+  deriving (Eq)
 
 type Parser = Parsec Text ()
 
@@ -92,12 +94,31 @@ fresh name = do
 
 reduce :: Term -> Reduce Term
 reduce = \case
+  {-
+  -- beta reduction
   App (Lam n r) t -> do
     t' <- reduce t
     reduce =<< subst n t' r
+  -- eta reduction
+  Lam n (App t1 t2)
+    | t2 == Var n, not (n `freeIn` t1) -> reduce t1
+  -}
+  -- do nothing
   Var n -> return (Var n)
-  Lam n r -> Lam n <$> reduce r
-  App t1 t2 -> App <$> reduce t1 <*> reduce t2
+  -- reduce body, eta-reduce if possible
+  Lam n r -> do
+    r' <- reduce r
+    case r' of
+      App t1 t2 | t2 == Var n, not (n `freeIn` t1) -> return t1
+      _ -> return (Lam n r')
+  -- reduce both terms, beta-reduce if possible
+  App t1 t2 -> do
+    t1' <- reduce t1
+    t2' <- reduce t2
+    case t1' of
+      Lam n r -> reduce =<< subst n t2' r
+      _ -> return (App t1' t2')
+
 
 subst :: Name -> Term -> Term -> Reduce Term
 subst n t = \case
@@ -108,8 +129,8 @@ subst n t = \case
     | n1 == n -> return (Lam n1 r)
     | n1 `freeIn` t -> do
         n1' <- fresh n1
-        t' <- subst n1 (Var n1') t
-        Lam n1 <$> subst n t' r
+        r' <- subst n1 (Var n1') r
+        Lam n1' <$> subst n t r'
     | otherwise -> Lam n1 <$> subst n t r
   App t1 t2 -> App <$> subst n t t1 <*> subst n t t2
 
