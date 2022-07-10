@@ -44,7 +44,7 @@ data Term
   | Prop
   | Var Name
   | Lam Name Term Term
-  | Prod Name Term Term
+  | Pi Name Term Term
   | App Term Term
 
 type Parser = Parsec Text ()
@@ -71,7 +71,7 @@ parseFactor =
   <|> (symbol 'T' >> return Type)
   <|> (symbol 'P' >> return Prop)
   <|> parseLam
-  <|> parseProd
+  <|> parsePi
   <|> parseParens
 
 parseName :: Parser Name
@@ -90,14 +90,14 @@ parseLam = do
   symbol ']'
   Lam n t <$> parseTerm
 
-parseProd :: Parser Term
-parseProd = do
+parsePi :: Parser Term
+parsePi = do
   symbol '?'
   n <- parseName
   symbol '['
   t <- parseTerm
   symbol ']'
-  Prod n t <$> parseTerm
+  Pi n t <$> parseTerm
 
 parseParens :: Parser Term
 parseParens = do
@@ -133,10 +133,10 @@ verifyKind = \case
   Prop -> return ()
   _ -> throwError "was expecting Type or Prop"
 
-matchProd :: Term -> CoC (Name, Term, Term)
-matchProd = \case
-  Prod n x1 x2 -> return (n, x1, x2)
-  _ -> throwError "was expecting a product type"
+matchPi :: Term -> CoC (Name, Term, Term)
+matchPi = \case
+  Pi n x1 x2 -> return (n, x1, x2)
+  _ -> throwError "was expecting a pi type"
 
 verifyEquiv :: Term -> Term -> CoC ()
 verifyEquiv x1 x2 = do
@@ -150,7 +150,7 @@ equivalent = curry \case
   (Prop, Prop) -> return True
   (Var n1, Var n2) -> return (n1 == n2)
   (Lam n1 x1 y1, Lam n2 x2 y2) -> equivAbst (n1, x1, y1) (n2, x2, y2)
-  (Prod n1 x1 y1, Prod n2 x2 y2) -> equivAbst (n1, x1, y1) (n2, x2, y2)
+  (Pi n1 x1 y1, Pi n2 x2 y2) -> equivAbst (n1, x1, y1) (n2, x2, y2)
   (App x1 y1, App x2 y2) -> (&&) <$> equivalent x1 x2 <*> equivalent y1 y2
   (_, _) -> return False
 
@@ -171,9 +171,9 @@ rename n n' = \case
   Lam n1 x1 x2
     | n1 == n -> Lam n1 (ren x1) x2
     | otherwise -> Lam n1 (ren x1) (ren x2)
-  Prod n1 x1 x2
-    | n1 == n -> Prod n1 (ren x1) x2
-    | otherwise -> Prod n1 (ren x1) (ren x2)
+  Pi n1 x1 x2
+    | n1 == n -> Pi n1 (ren x1) x2
+    | otherwise -> Pi n1 (ren x1) (ren x2)
   App x1 x2 -> App (ren x1) (ren x2)
   where ren = rename n n'
 
@@ -188,8 +188,8 @@ infer env = \case
     t1 <- infer env x1
     verifyKind t1
     t2 <- infer (Map.insert n x1 env) x2
-    return (Prod n x1 t2)
-  Prod n x1 x2 -> do
+    return (Pi n x1 t2)
+  Pi n x1 x2 -> do
     t1 <- infer env x1
     verifyKind t1
     t2 <- infer (Map.insert n x1 env) x2
@@ -197,7 +197,7 @@ infer env = \case
     return t2
   App x1 x2 -> do
     t1 <- reduce =<< infer env x1
-    (n, t2, t3) <- matchProd t1
+    (n, t2, t3) <- matchPi t1
     t4 <- reduce =<< infer env x2
     verifyEquiv t4 t2
     subst n x2 t3
@@ -208,7 +208,7 @@ reduce = \case
   Prop -> return Prop
   Var n -> return (Var n)
   Lam n x1 x2 -> Lam n <$> reduce x1 <*> reduce x2
-  Prod n x1 x2 -> Prod n <$> reduce x1 <*> reduce x2
+  Pi n x1 x2 -> Pi n <$> reduce x1 <*> reduce x2
   App x1 x2 -> do
     x1' <- reduce x1
     x2' <- reduce x2
@@ -224,7 +224,7 @@ subst n x = \case
     | n1 == n -> return x
     | otherwise -> return (Var n1)
   Lam n1 x1 x2 -> substAbst Lam n x (n1, x1, x2)
-  Prod n1 x1 x2 -> substAbst Prod n x (n1, x1, x2)
+  Pi n1 x1 x2 -> substAbst Pi n x (n1, x1, x2)
   App x1 x2 -> App <$> sub x1 <*> sub x2
   where sub = subst n x
 
@@ -244,7 +244,7 @@ freeIn n = \case
   Prop -> False
   Var n1 -> n1 == n
   Lam n1 x1 x2 -> n `freeIn` x1 || (n1 /= n && n `freeIn` x2)
-  Prod n1 x1 x2 -> n `freeIn` x1 || (n1 /= n && n `freeIn` x2)
+  Pi n1 x1 x2 -> n `freeIn` x1 || (n1 /= n && n `freeIn` x2)
   App x1 x2 -> n `freeIn` x1 || n `freeIn` x2
 
 data Context
@@ -261,7 +261,7 @@ pretty ctx = \case
   Lam n x1 x2 ->
     parensIf (ctx == AppLeft || ctx == AppRight) $
     "\\" <> getText n <> " [" <> pretty Outer x1 <> "] " <> pretty Outer x2
-  Prod n x1 x2 ->
+  Pi n x1 x2 ->
     parensIf (ctx == AppLeft || ctx == AppRight) $
     "?" <> getText n <> " [" <> pretty Outer x1 <> "] " <> pretty Outer x2
   App x1 x2 ->
