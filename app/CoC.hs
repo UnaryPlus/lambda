@@ -7,7 +7,7 @@ import Control.Monad (forever)
 import Data.Map (Map)
 import qualified Data.Map as Map
 
-import Text.Parsec (Parsec, runParser, (<|>), char, many, lower, alphaNum, spaces, eof)
+import Text.Parsec (Parsec, runParser, (<|>), char, many, lower, digit, alphaNum, spaces, eof)
 
 import Control.Monad.Except (ExceptT, throwError, runExceptT)
 import Control.Monad.State (State, evalState)
@@ -76,7 +76,7 @@ parseFactor =
 
 parseName :: Parser Name
 parseName = do
-  c <- lower
+  c <- lower <|> digit
   str <- many alphaNum
   spaces
   return $ Name (Text.pack (c:str))
