@@ -3,10 +3,9 @@
 module CoC (main) where
 
 import qualified Data.List as List
+import qualified Control.Monad as Monad
 import Data.Functor.Identity (runIdentity)
 import System.IO (hFlush, stdout)
-
-import qualified Data.Map as Map
 
 import Text.Parsec (Parsec, runParser, (<|>), char, try, many, lower, digit, alphaNum, spaces, eof)
 
@@ -20,9 +19,9 @@ import qualified Data.Text as Text
 import qualified Data.Text.IO as IO
 
 main :: IO ()
-main = evalStateT (loop []) 0
+main = evalStateT (loop emptyDefs) 0
 
-loop :: [(Name, Term, Term)] -> StateT Int IO ()
+loop :: Defs -> StateT Int IO ()
 loop defs = do
   lift (IO.putStr "> " >> hFlush stdout)
   str <- lift IO.getLine
@@ -33,26 +32,39 @@ loop defs = do
     Right (Evaluate term) -> evaluate defs term
     Right (Define name term) -> define defs name term
 
-evaluate :: [(Name, Term, Term)] -> Term -> StateT Int IO ()
+evaluate :: Defs -> Term -> StateT Int IO ()
 evaluate defs term = do
-  res <- convertCoC (inferReduce (withDefs defs term))
-  case res of
+  convertCoC eval >>= \case
     Left err -> lift (IO.putStrLn err)
-    Right (ty, term') -> do
-      lift $ IO.putStrLn ("type: " <> pretty Outer ty)
-      lift $ IO.putStrLn (pretty Outer term')
+    Right (term', ty, norm) -> lift do
+      IO.putStrLn ("expanded: " <> pretty Outer term')
+      IO.putStrLn ("type: " <> pretty Outer ty)
+      IO.putStrLn (pretty Outer norm)
   loop defs
+  where
+    eval :: CoC (Term, Term, Term)
+    eval = do
+      term' <- expandDefs defs term
+      ty <- reduce =<< infer emptyEnv term'
+      norm <- reduce term'
+      return (term', ty, norm)
 
-define :: [(Name, Term, Term)] -> Name -> Term -> StateT Int IO ()
-define defs name term = do
-  res <- convertCoC (reduce =<< infer emptyEnv (withDefs defs term))
-  case res of
+define :: Defs -> Name -> Term -> StateT Int IO ()
+define defs name term =
+  convertCoC eval >>= \case
     Left err -> do
       lift (IO.putStrLn err)
       loop defs
-    Right ty -> do
+    Right (term', ty) -> do
+      lift $ IO.putStrLn ("expanded: " <> pretty Outer term')
       lift $ IO.putStrLn ("type: " <> pretty Outer ty)
-      loop ((name, ty, term) : defs)
+      loop (insertDef name term defs)
+  where
+    eval :: CoC (Term, Term)
+    eval = do
+      term' <- expandDefs defs term
+      ty <- reduce =<< infer emptyEnv term'
+      return (term', ty)
 
 data Name
   = Name Text
@@ -78,10 +90,6 @@ data Command
   | Evaluate Term
 
 type Parser = Parsec Text ()
-
-withDefs :: [(Name, Term, Term)] -> Term -> Term
-withDefs defs term = List.foldl' addDef term defs
-  where addDef x (n, t, v) = App (Lam n t x) v
 
 symbol :: Char -> Parser ()
 symbol c = char c >> spaces
@@ -150,9 +158,21 @@ parseParens = do
   symbol ')'
   return t
 
+newtype Defs = Defs [(Name, Term)]
+
 newtype Env = Env [(Name, Term)]
 
 type CoC = ExceptT Text (State Int)
+
+emptyDefs :: Defs
+emptyDefs = Defs []
+
+insertDef :: Name -> Term -> Defs -> Defs
+insertDef name val (Defs d) = Defs ((name, val) : d)
+
+expandDefs :: Defs -> Term -> CoC Term
+expandDefs (Defs d) term = Monad.foldM expandDef term d
+  where expandDef x (n, v) = subst n v x
 
 emptyEnv :: Env
 emptyEnv = Env []
@@ -167,9 +187,6 @@ insertEnv name val (Env e)
 
 convertCoC :: CoC a -> StateT Int IO (Either Text a)
 convertCoC = mapStateT (return . runIdentity) . runExceptT
-
-inferReduce :: Term -> CoC (Term, Term)
-inferReduce term = (,) <$> (reduce =<< infer emptyEnv term) <*> reduce term
 
 fresh :: Name -> CoC Name
 fresh name = do
