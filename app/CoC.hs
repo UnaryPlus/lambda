@@ -182,11 +182,13 @@ matchPi = \case
 
 verifyEquiv :: Term -> Term -> CoC ()
 verifyEquiv x1 x2 = do
-  test <- equivalent x1 x2
+  x1' <- reduce x1
+  x2' <- reduce x2
+  test <- equivalent x1' x2'
   if test then return ()
     else throwError ("could not match terms:\n* "
-      <> pretty Outer x1 <> "\n* "
-      <> pretty Outer x2)
+      <> pretty Outer x1' <> "\n* "
+      <> pretty Outer x2')
 
 equivalent :: Term -> Term -> CoC Bool
 equivalent = curry \case
@@ -229,22 +231,30 @@ infer env = \case
     Nothing -> throwError (getText n <> " is not defined")
     Just t -> return t
   Lam n x1 x2 -> do
-    t1 <- reduce =<< infer env x1
+    t1 <- whnf =<< infer env x1
     verifyKind t1
     t2 <- infer (Map.insert n x1 env) x2
     return (Pi n x1 t2)
   Pi n x1 x2 -> do
-    t1 <- reduce =<< infer env x1
+    t1 <- whnf =<< infer env x1
     verifyKind t1
-    t2 <- reduce =<< infer (Map.insert n x1 env) x2
+    t2 <- whnf =<< infer (Map.insert n x1 env) x2
     verifyKind t2
     return t2
   App x1 x2 -> do
-    t1 <- reduce =<< infer env x1
+    t1 <- whnf =<< infer env x1
     (n, t2, t3) <- matchPi t1
-    t4 <- reduce =<< infer env x2
+    t4 <- infer env x2
     verifyEquiv t4 t2
     subst n x2 t3
+
+whnf :: Term -> CoC Term
+whnf = \case
+  App x1 x2 ->
+    whnf x1 >>= \case
+      Lam n _ r -> whnf =<< subst n x2 r
+      x1' -> return (App x1' x2)
+  x -> return x
 
 reduce :: Term -> CoC Term
 reduce = \case
