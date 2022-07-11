@@ -2,11 +2,10 @@
 
 module CoC (main) where
 
-import Data.List (foldl')
+import qualified Data.List as List
 import Data.Functor.Identity (runIdentity)
 import System.IO (hFlush, stdout)
 
-import Data.Map (Map)
 import qualified Data.Map as Map
 
 import Text.Parsec (Parsec, runParser, (<|>), char, try, many, lower, digit, alphaNum, spaces, eof)
@@ -24,36 +23,36 @@ main :: IO ()
 main = evalStateT (loop []) 0
 
 loop :: [(Name, Term, Term)] -> StateT Int IO ()
-loop env = do
+loop defs = do
   lift (IO.putStr "> " >> hFlush stdout)
   str <- lift IO.getLine
   case runParser parseCommand () "input" str of
     Left err -> do
       lift (print err)
-      loop env
-    Right (Evaluate term) -> evaluate env term
-    Right (Define name term) -> define env name term
+      loop defs
+    Right (Evaluate term) -> evaluate defs term
+    Right (Define name term) -> define defs name term
 
 evaluate :: [(Name, Term, Term)] -> Term -> StateT Int IO ()
-evaluate env term = do
-  res <- convertCoC (inferReduce (withEnv env term))
+evaluate defs term = do
+  res <- convertCoC (inferReduce (withDefs defs term))
   case res of
     Left err -> lift (IO.putStrLn err)
     Right (ty, term') -> do
       lift $ IO.putStrLn ("type: " <> pretty Outer ty)
       lift $ IO.putStrLn (pretty Outer term')
-  loop env
+  loop defs
 
 define :: [(Name, Term, Term)] -> Name -> Term -> StateT Int IO ()
-define env name term = do
-  res <- convertCoC (reduce =<< infer Map.empty (withEnv env term))
+define defs name term = do
+  res <- convertCoC (reduce =<< infer emptyEnv (withDefs defs term))
   case res of
     Left err -> do
       lift (IO.putStrLn err)
-      loop env
+      loop defs
     Right ty -> do
       lift $ IO.putStrLn ("type: " <> pretty Outer ty)
-      loop ((name, ty, term) : env)
+      loop ((name, ty, term) : defs)
 
 data Name
   = Name Text
@@ -80,8 +79,8 @@ data Command
 
 type Parser = Parsec Text ()
 
-withEnv :: [(Name, Term, Term)] -> Term -> Term
-withEnv env term = foldl' addDef term env
+withDefs :: [(Name, Term, Term)] -> Term -> Term
+withDefs defs term = List.foldl' addDef term defs
   where addDef x (n, t, v) = App (Lam n t x) v
 
 symbol :: Char -> Parser ()
@@ -151,15 +150,26 @@ parseParens = do
   symbol ')'
   return t
 
-type Env = Map Name Term
+newtype Env = Env [(Name, Term)]
 
 type CoC = ExceptT Text (State Int)
+
+emptyEnv :: Env
+emptyEnv = Env []
+
+lookupEnv :: Name -> Env -> Maybe Term
+lookupEnv name (Env e) = List.lookup name e
+
+insertEnv :: Name -> Term -> Env -> CoC Env
+insertEnv name val (Env e)
+  | name `elem` map fst e = throwError (getText name <> " is already defined")
+  | otherwise = return $ Env ((name, val) : e)
 
 convertCoC :: CoC a -> StateT Int IO (Either Text a)
 convertCoC = mapStateT (return . runIdentity) . runExceptT
 
 inferReduce :: Term -> CoC (Term, Term)
-inferReduce term = (,) <$> (reduce =<< infer Map.empty term) <*> reduce term
+inferReduce term = (,) <$> (reduce =<< infer emptyEnv term) <*> reduce term
 
 fresh :: Name -> CoC Name
 fresh name = do
@@ -227,18 +237,20 @@ infer :: Env -> Term -> CoC Term
 infer env = \case
   Type -> throwError "tried to infer type of T"
   Prop -> return Type
-  Var n -> case Map.lookup n env of
+  Var n -> case lookupEnv n env of
     Nothing -> throwError (getText n <> " is not defined")
     Just t -> return t
   Lam n x1 x2 -> do
     t1 <- whnf =<< infer env x1
     verifyKind t1
-    t2 <- infer (Map.insert n x1 env) x2
+    env' <- insertEnv n x1 env
+    t2 <- infer env' x2
     return (Pi n x1 t2)
   Pi n x1 x2 -> do
     t1 <- whnf =<< infer env x1
     verifyKind t1
-    t2 <- whnf =<< infer (Map.insert n x1 env) x2
+    env' <- insertEnv n x1 env
+    t2 <- whnf =<< infer env' x2
     verifyKind t2
     return t2
   App x1 x2 -> do
