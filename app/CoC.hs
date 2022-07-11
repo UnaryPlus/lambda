@@ -1,16 +1,19 @@
 {-# LANGUAGE BlockArguments, LambdaCase, OverloadedStrings #-}
 
-module CoC where
+module CoC (main) where
 
-import Control.Monad (forever)
+import Data.List (foldl')
+import Data.Functor.Identity (runIdentity)
+import System.IO (hFlush, stdout)
 
 import Data.Map (Map)
 import qualified Data.Map as Map
 
-import Text.Parsec (Parsec, runParser, (<|>), char, many, lower, digit, alphaNum, spaces, eof)
+import Text.Parsec (Parsec, runParser, (<|>), char, try, many, lower, digit, alphaNum, spaces, eof)
 
+import Control.Monad.Trans (lift)
 import Control.Monad.Except (ExceptT, throwError, runExceptT)
-import Control.Monad.State (State, evalState)
+import Control.Monad.State (StateT, State, mapStateT, evalStateT)
 import qualified Control.Monad.State as State
 
 import Data.Text (Text)
@@ -18,16 +21,39 @@ import qualified Data.Text as Text
 import qualified Data.Text.IO as IO
 
 main :: IO ()
-main = forever do
-  str <- IO.getLine
-  case runParser parseInput () "input" str of
-    Left err -> print err
-    Right term ->
-      case runCoC (reduceInput term) of
-        Left err -> IO.putStrLn err
-        Right (ty, term') -> do
-          IO.putStrLn ("type: " <> pretty Outer ty)
-          IO.putStrLn (pretty Outer term')
+main = evalStateT (loop []) 0
+
+loop :: [(Name, Term, Term)] -> StateT Int IO ()
+loop env = do
+  lift (IO.putStr "> " >> hFlush stdout)
+  str <- lift IO.getLine
+  case runParser parseCommand () "input" str of
+    Left err -> do
+      lift (print err)
+      loop env
+    Right (Evaluate term) -> evaluate env term
+    Right (Define name term) -> define env name term
+
+evaluate :: [(Name, Term, Term)] -> Term -> StateT Int IO ()
+evaluate env term = do
+  res <- convertCoC (inferReduce (withEnv env term))
+  case res of
+    Left err -> lift (IO.putStrLn err)
+    Right (ty, term') -> do
+      lift $ IO.putStrLn ("type: " <> pretty Outer ty)
+      lift $ IO.putStrLn (pretty Outer term')
+  loop env
+
+define :: [(Name, Term, Term)] -> Name -> Term -> StateT Int IO ()
+define env name term = do
+  res <- convertCoC (infer Map.empty (withEnv env term))
+  case res of
+    Left err -> do
+      lift (IO.putStrLn err)
+      loop env
+    Right ty -> do
+      lift $ IO.putStrLn ("type: " <> pretty Outer ty)
+      loop ((name, ty, term) : env)
 
 data Name
   = Name Text
@@ -46,15 +72,34 @@ data Term
   | Lam Name Term Term
   | Pi Name Term Term
   | App Term Term
+  deriving (Eq)
+
+data Command
+  = Define Name Term
+  | Evaluate Term
 
 type Parser = Parsec Text ()
 
-parseInput :: Parser Term
-parseInput = do
+withEnv :: [(Name, Term, Term)] -> Term -> Term
+withEnv env term = foldl' addDef term env
+  where addDef x (n, t, v) = App (Lam n t x) v
+
+symbol :: Char -> Parser ()
+symbol c = char c >> spaces
+
+parseCommand :: Parser Command
+parseCommand = do
   spaces
-  term <- parseTerm
+  cmd <- try parseDefine
+    <|> (Evaluate <$> parseTerm)
   eof
-  return term
+  return cmd
+
+parseDefine :: Parser Command
+parseDefine = do
+  name <- parseName
+  symbol '='
+  Define name <$> parseTerm
 
 parseTerm :: Parser Term
 parseTerm = parseApp =<< parseFactor
@@ -83,7 +128,7 @@ parseName = do
 
 parseLam :: Parser Term
 parseLam = do
-  symbol '\\'
+  symbol '\\' <|> symbol 'λ'
   n <- parseName
   symbol '['
   t <- parseTerm
@@ -92,7 +137,7 @@ parseLam = do
 
 parsePi :: Parser Term
 parsePi = do
-  symbol '?'
+  symbol '?' <|> symbol '∀'
   n <- parseName
   symbol '['
   t <- parseTerm
@@ -106,18 +151,15 @@ parseParens = do
   symbol ')'
   return t
 
-symbol :: Char -> Parser ()
-symbol c = char c >> spaces
-
 type Env = Map Name Term
 
 type CoC = ExceptT Text (State Int)
 
-runCoC :: CoC a -> Either Text a
-runCoC act = evalState (runExceptT act) 0
+convertCoC :: CoC a -> StateT Int IO (Either Text a)
+convertCoC = mapStateT (return . runIdentity) . runExceptT
 
-reduceInput :: Term -> CoC (Term, Term)
-reduceInput term = (,) <$> infer Map.empty term <*> reduce term
+inferReduce :: Term -> CoC (Term, Term)
+inferReduce term = (,) <$> infer Map.empty term <*> reduce term
 
 fresh :: Name -> CoC Name
 fresh name = do
@@ -131,18 +173,20 @@ verifyKind :: Term -> CoC ()
 verifyKind = \case
   Type -> return ()
   Prop -> return ()
-  _ -> throwError "was expecting Type or Prop"
+  x -> throwError ("was expecting T or P:\n* " <> pretty Outer x)
 
 matchPi :: Term -> CoC (Name, Term, Term)
 matchPi = \case
   Pi n x1 x2 -> return (n, x1, x2)
-  _ -> throwError "was expecting a pi type"
+  x -> throwError ("was expecting a pi type:\n* " <> pretty Outer x)
 
 verifyEquiv :: Term -> Term -> CoC ()
 verifyEquiv x1 x2 = do
   test <- equivalent x1 x2
   if test then return ()
-    else throwError "could not match terms"
+    else throwError ("could not match terms:\n* "
+      <> pretty Outer x1 <> "\n* "
+      <> pretty Outer x2)
 
 equivalent :: Term -> Term -> CoC Bool
 equivalent = curry \case
@@ -185,14 +229,15 @@ infer env = \case
     Nothing -> throwError (getText n <> " is not defined")
     Just t -> return t
   Lam n x1 x2 -> do
-    t1 <- infer env x1
-    verifyKind t1
+    _ <- infer env x1
     t2 <- infer (Map.insert n x1 env) x2
-    return (Pi n x1 t2)
+    let ty = Pi n x1 t2
+    _ <- infer env ty
+    return ty
   Pi n x1 x2 -> do
-    t1 <- infer env x1
+    t1 <- reduce =<< infer env x1
     verifyKind t1
-    t2 <- infer (Map.insert n x1 env) x2
+    t2 <- reduce =<< infer (Map.insert n x1 env) x2
     verifyKind t2
     return t2
   App x1 x2 -> do
@@ -207,8 +252,15 @@ reduce = \case
   Type -> return Type
   Prop -> return Prop
   Var n -> return (Var n)
-  Lam n x1 x2 -> Lam n <$> reduce x1 <*> reduce x2
+  --reduce type and body, eta-reduce if possible
+  Lam n x1 x2 -> do
+    x1' <- reduce x1
+    x2' <- reduce x2
+    return case x2' of
+      App y1 y2 | y2 == Var n, not (n `freeIn` y1) -> y1
+      _ -> Lam n x1' x2'
   Pi n x1 x2 -> Pi n <$> reduce x1 <*> reduce x2
+  --reduce both terms, beta-reduce if possible
   App x1 x2 -> do
     x1' <- reduce x1
     x2' <- reduce x2
@@ -260,10 +312,10 @@ pretty ctx = \case
   Var n -> getText n
   Lam n x1 x2 ->
     parensIf (ctx == AppLeft || ctx == AppRight) $
-    "\\" <> getText n <> " [" <> pretty Outer x1 <> "] " <> pretty Outer x2
+    "λ" <> getText n <> " [" <> pretty Outer x1 <> "] " <> pretty Outer x2
   Pi n x1 x2 ->
     parensIf (ctx == AppLeft || ctx == AppRight) $
-    "?" <> getText n <> " [" <> pretty Outer x1 <> "] " <> pretty Outer x2
+    "∀" <> getText n <> " [" <> pretty Outer x1 <> "] " <> pretty Outer x2
   App x1 x2 ->
     parensIf (ctx == AppRight) $
     pretty AppLeft x1 <> " " <> pretty AppRight x2

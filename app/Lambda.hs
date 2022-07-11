@@ -1,6 +1,6 @@
 {-# LANGUAGE BlockArguments, LambdaCase, OverloadedStrings #-}
 
-module Lambda where
+module Lambda (main) where
 
 import Data.List (foldl')
 import Data.Functor.Identity (runIdentity)
@@ -118,13 +118,13 @@ fresh name = do
 reduce :: Term -> State Int Term
 reduce = \case
   Var n -> return (Var n)
-  -- reduce body, eta-reduce if possible
+  --reduce body, eta-reduce if possible
   Lam n r -> do
     r' <- reduce r
     case r' of
       App t1 t2 | t2 == Var n, not (n `freeIn` t1) -> return t1
       _ -> return (Lam n r')
-  -- reduce both terms, beta-reduce if possible
+  --reduce both terms, beta-reduce if possible
   App t1 t2 -> do
     t1' <- reduce t1
     t2' <- reduce t2
