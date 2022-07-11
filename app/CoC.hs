@@ -46,7 +46,7 @@ evaluate env term = do
 
 define :: [(Name, Term, Term)] -> Name -> Term -> StateT Int IO ()
 define env name term = do
-  res <- convertCoC (infer Map.empty (withEnv env term))
+  res <- convertCoC (reduce =<< infer Map.empty (withEnv env term))
   case res of
     Left err -> do
       lift (IO.putStrLn err)
@@ -159,7 +159,7 @@ convertCoC :: CoC a -> StateT Int IO (Either Text a)
 convertCoC = mapStateT (return . runIdentity) . runExceptT
 
 inferReduce :: Term -> CoC (Term, Term)
-inferReduce term = (,) <$> infer Map.empty term <*> reduce term
+inferReduce term = (,) <$> (reduce =<< infer Map.empty term) <*> reduce term
 
 fresh :: Name -> CoC Name
 fresh name = do
@@ -229,11 +229,10 @@ infer env = \case
     Nothing -> throwError (getText n <> " is not defined")
     Just t -> return t
   Lam n x1 x2 -> do
-    _ <- infer env x1
+    t1 <- reduce =<< infer env x1
+    verifyKind t1
     t2 <- infer (Map.insert n x1 env) x2
-    let ty = Pi n x1 t2
-    _ <- infer env ty
-    return ty
+    return (Pi n x1 t2)
   Pi n x1 x2 -> do
     t1 <- reduce =<< infer env x1
     verifyKind t1
