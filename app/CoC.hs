@@ -205,7 +205,7 @@ verifyKind = \case
 matchPi :: Term -> CoC (Name, Term, Term)
 matchPi = \case
   Pi n x1 x2 -> return (n, x1, x2)
-  x -> throwError ("was expecting a pi type:\n* " <> pretty Outer x)
+  x -> throwError ("was expecting a ∀ type:\n* " <> pretty Outer x)
 
 verifyEquiv :: Term -> Term -> CoC ()
 verifyEquiv x1 x2 = do
