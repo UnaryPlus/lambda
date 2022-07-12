@@ -139,10 +139,12 @@ subst n t = \case
     | otherwise -> return (Var n1)
   Lam n1 r
     | n1 == n -> return (Lam n1 r)
-    | n1 `freeIn` t -> do
-        n1' <- fresh n1
-        r' <- subst n1 (Var n1') r
-        Lam n1' <$> subst n t r'
+    | n1 `freeIn` t ->
+        if n `freeIn` r then do
+          n1' <- fresh n1
+          r' <- subst n1 (Var n1') r
+          Lam n1' <$> subst n t r'
+        else return (Lam n1 r)
     | otherwise -> Lam n1 <$> subst n t r
   App t1 t2 -> App <$> subst n t t1 <*> subst n t t2
 
