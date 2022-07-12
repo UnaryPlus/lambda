@@ -5,8 +5,9 @@ module Lambda (main) where
 import Data.List (foldl')
 import Data.Functor.Identity (runIdentity)
 import System.IO (hFlush, stdout)
+import Data.Char (isAsciiUpper, isAsciiLower, isDigit)
 
-import Text.Parsec (Parsec, runParser, (<|>), char, try, many1, alphaNum, spaces, eof)
+import Text.Parsec (Parsec, runParser, (<|>), char, try, many1, satisfy, spaces, eof)
 
 import Control.Monad.Trans (lift)
 import Control.Monad.State (State, StateT, evalStateT, mapStateT)
@@ -57,6 +58,9 @@ withEnv env term = foldl' addDef term env
 
 symbol :: Char -> Parser ()
 symbol c = char c >> spaces
+
+alphaNum :: Parser Char
+alphaNum = satisfy \c -> isAsciiUpper c || isAsciiLower c || isDigit c
 
 parseCommand :: Parser Command
 parseCommand = do

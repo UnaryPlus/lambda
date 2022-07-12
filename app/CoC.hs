@@ -6,8 +6,9 @@ import qualified Data.List as List
 import qualified Control.Monad as Monad
 import Data.Functor.Identity (runIdentity)
 import System.IO (hFlush, stdout)
+import Data.Char (isAsciiUpper, isAsciiLower, isDigit)
 
-import Text.Parsec (Parsec, runParser, (<|>), char, try, many, lower, digit, alphaNum, spaces, eof)
+import Text.Parsec (Parsec, runParser, (<|>), char, try, many, satisfy, spaces, eof)
 
 import Control.Monad.Trans (lift)
 import Control.Monad.Except (ExceptT, throwError, runExceptT)
@@ -94,6 +95,12 @@ type Parser = Parsec Text ()
 symbol :: Char -> Parser ()
 symbol c = char c >> spaces
 
+isAlphaNum :: Char -> Bool
+isAlphaNum c = isAsciiUpper c || isAsciiLower c || isDigit c
+
+nonReserved :: Parser Char
+nonReserved = satisfy \c -> c /= 'T' && c /= 'P' && isAlphaNum c
+
 parseCommand :: Parser Command
 parseCommand = do
   spaces
@@ -128,8 +135,8 @@ parseFactor =
 
 parseName :: Parser Name
 parseName = do
-  c <- lower <|> digit
-  str <- many alphaNum
+  c <- nonReserved
+  str <- many (satisfy isAlphaNum)
   spaces
   return $ Name (Text.pack (c:str))
 
