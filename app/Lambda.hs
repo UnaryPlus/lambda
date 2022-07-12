@@ -1,36 +1,33 @@
 {-# LANGUAGE BlockArguments, LambdaCase, OverloadedStrings #-}
 
-module Lambda (main) where
+module Lambda (main, Term(..), Name(..), runReduce, pretty) where
 
 import Data.List (foldl')
-import Data.Functor.Identity (runIdentity)
-import System.IO (hFlush, stdout)
-import Data.Char (isAsciiUpper, isAsciiLower, isDigit)
 
-import Text.Parsec (Parsec, runParser, (<|>), char, try, many1, satisfy, spaces, eof)
+import Text.Parsec (runParser, (<|>), try, many1, chainl1, spaces, eof)
 
-import Control.Monad.Trans (lift)
-import Control.Monad.State (State, StateT, evalStateT, mapStateT)
+import Control.Monad.State (State, evalState)
 import qualified Control.Monad.State as State
 
 import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.IO as IO
 
-main :: IO ()
-main = evalStateT (loop []) 0
+import Util (prompt, Parser, symbol, parens, alphaNum, parensIf)
 
-loop :: [(Name, Term)] -> StateT Int IO ()
+main :: IO ()
+main = loop []
+
+loop :: [(Name, Term)] -> IO ()
 loop env = do
-  lift (IO.putStr "> " >> hFlush stdout)
-  str <- lift IO.getLine
+  str <- prompt
   case runParser parseCommand () "input" str of
     Left err -> do
-      lift (print err)
+      print err
       loop env
     Right (Evaluate term) -> do
-      res <- mapStateT (return . runIdentity) (reduce (withEnv env term))
-      lift (IO.putStrLn (pretty Outer res))
+      let res = runReduce (withEnv env term)
+      IO.putStrLn (pretty res)
       loop env
     Right (Define name term) -> do
       loop ((name, term) : env)
@@ -50,17 +47,9 @@ data Command
   = Define Name Term
   | Evaluate Term
 
-type Parser = Parsec Text ()
-
 withEnv :: [(Name, Term)] -> Term -> Term
 withEnv env term = foldl' addDef term env
   where addDef t (n, v) = App (Lam n t) v
-
-symbol :: Char -> Parser ()
-symbol c = char c >> spaces
-
-alphaNum :: Parser Char
-alphaNum = satisfy \c -> isAsciiUpper c || isAsciiLower c || isDigit c
 
 parseCommand :: Parser Command
 parseCommand = do
@@ -77,19 +66,13 @@ parseDefine = do
   Define name <$> parseTerm
 
 parseTerm :: Parser Term
-parseTerm = parseApp =<< parseFactor
-
-parseApp :: Term -> Parser Term
-parseApp fun = do
-    arg <- parseFactor
-    parseApp (App fun arg)
-  <|> return fun
+parseTerm = chainl1 parseFactor (return App)
 
 parseFactor :: Parser Term
 parseFactor =
   (Var <$> parseName)
   <|> parseLam
-  <|> parseParens
+  <|> parens parseTerm
 
 parseName :: Parser Name
 parseName = do
@@ -104,12 +87,8 @@ parseLam = do
   symbol '.'
   Lam name <$> parseTerm
 
-parseParens :: Parser Term
-parseParens = do
-  symbol '('
-  term <- parseTerm
-  symbol ')'
-  return term
+runReduce :: Term -> Term
+runReduce t = evalState (reduce t) 0
 
 fresh :: Name -> State Int Name
 fresh name = do
@@ -165,22 +144,20 @@ data Context
   | LamRight
   deriving (Eq)
 
-pretty :: Context -> Term -> Text
-pretty ctx = \case
+pretty :: Term -> Text
+pretty = prettyAt Outer
+
+prettyAt :: Context -> Term -> Text
+prettyAt ctx = \case
   Var n -> prettyName n
   Lam n r ->
     parensIf (ctx == AppLeft || ctx == AppRight) $
-    "λ" <> prettyName n <> ". " <> pretty LamRight r
+    "λ" <> prettyName n <> ". " <> prettyAt LamRight r
   App t1 t2 ->
     parensIf (ctx == AppRight) $
-    pretty AppLeft t1 <> " " <> pretty AppRight t2
+    prettyAt AppLeft t1 <> " " <> prettyAt AppRight t2
 
 prettyName :: Name -> Text
 prettyName = \case
   Name text -> text
   NameId text x -> text <> "_" <> Text.pack (show x)
-
-parensIf :: Bool -> Text -> Text
-parensIf cond text
-  | cond = "(" <> text <> ")"
-  | otherwise = text
