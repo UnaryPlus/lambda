@@ -11,7 +11,7 @@ license:            MIT
 executable lambda
     hs-source-dirs:   app
     main-is:          Main.hs
-    other-modules:    Lambda, CoC
+    other-modules:    Lambda, CoC, SystemF
 
     build-depends:    base ^>=4.14.1.0,
                       parsec,
