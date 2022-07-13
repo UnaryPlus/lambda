@@ -1,8 +1,7 @@
-{-# LANGUAGE BlockArguments, LambdaCase, OverloadedStrings #-}
+{-# LANGUAGE BlockArguments, LambdaCase, OverloadedStrings, FlexibleContexts #-}
 
 module SystemF (main) where
 
-import Data.Functor.Identity (runIdentity)
 import qualified Data.List as List
 import qualified Data.Bifunctor as Bf
 import qualified Control.Monad as Monad
@@ -13,8 +12,8 @@ import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.IO as IO
 
-import Control.Monad.Trans (lift)
-import Control.Monad.State (State, StateT, mapStateT, evalStateT, evalState)
+import Control.Monad.Except (MonadError, throwError)
+import Control.Monad.State (MonadState, StateT, evalStateT, evalState)
 import qualified Control.Monad.State as State
 
 import Util (prompt, Parser, symbol, parens, squares, alphaNum, parensIf)
@@ -46,12 +45,9 @@ loop defs = do
         Left err -> IO.putStrLn err >> loop defs
         Right () -> loop (Type a ty : defs)
 
-inject :: (Monad m) => State s a -> StateT s m a
-inject = mapStateT (return . runIdentity)
-
 runInfer :: [Def] -> Term -> Either Text Type
 runInfer defs e = flip evalStateT 0 do
-  e' <- inject (addDefs Let e defs)
+  e' <- addDefs Let e defs
   infer ([], []) e'
 
 runValidType :: [Def] -> Type -> Either Text ()
@@ -59,10 +55,10 @@ runValidType defs t = let
   t' = evalState (addDefs (\_ _ -> id) t defs) 0
   in validType [] t'
 
-addDefs :: Subst a => (Var -> Term -> a -> a) -> a -> [Def] -> State Int a
+addDefs :: (MonadState Int m, Subst a) => (Var -> Term -> a -> a) -> a -> [Def] -> m a
 addDefs = Monad.foldM . addDef
 
-addDef :: Subst a => (Var -> Term -> a -> a) -> a -> Def -> State Int a
+addDef :: (MonadState Int m, Subst a) => (Var -> Term -> a -> a) -> a -> Def -> m a
 addDef let_ e = \case
   Term x e_x -> return (let_ x e_x e)
   Type a t -> subst a t e
@@ -184,31 +180,31 @@ addVar x t = Bf.first ((x, t) :)
 addTVar :: TVar -> Env -> Env
 addTVar a = Bf.second (a :)
 
-lookupVar :: Var -> TermEnv -> Either Text Type
+lookupVar :: (MonadError Text m) => Var -> TermEnv -> m Type
 lookupVar x env =
   case List.lookup x env of
-    Nothing -> Left (showVar x <> " is not defined")
-    Just t -> Right t
+    Just t -> return t
+    Nothing -> throwError (showVar x <> " is not defined")
 
-lookupTVar :: TVar -> TypeEnv -> Either Text ()
+lookupTVar :: (MonadError Text m) => TVar -> TypeEnv -> m ()
 lookupTVar a env
-  | a `elem` env = Right ()
-  | otherwise = Left (showTVar a <> " is not defined")
+  | a `elem` env = return ()
+  | otherwise = throwError (showTVar a <> " is not defined")
 
-matchArr :: Type -> Either Text (Type, Type)
+matchArr :: (MonadError Text m) => Type -> m (Type, Type)
 matchArr = \case
-  Arr t1 t2 -> Right (t1, t2)
-  _ -> Left "was expecting function type"
+  Arr t1 t2 -> return (t1, t2)
+  _ -> throwError "was expecting function type"
 
-matchForall :: Type -> Either Text (TVar, Type)
+matchForall :: (MonadError Text m) => Type -> m (TVar, Type)
 matchForall = \case
-  Forall a t -> Right (a, t)
-  _ -> Left "was expecting forall type"
+  Forall a t -> return (a, t)
+  _ -> throwError "was expecting forall type"
 
-verifyEquiv :: Type -> Type -> Either Text ()
+verifyEquiv :: (MonadError Text m) => Type -> Type -> m ()
 verifyEquiv t u
-  | equivalent 0 t u = Right ()
-  | otherwise = Left "could not match types"
+  | equivalent 0 t u = return ()
+  | otherwise = throwError "could not match types"
 
 equivalent :: Int -> Type -> Type -> Bool
 equivalent i = curry \case
@@ -219,7 +215,7 @@ equivalent i = curry \case
     in equivalent (i+1) (rename a temp t) (rename b temp u)
   _ -> False
 
-fresh :: TVar -> State Int TVar
+fresh :: (MonadState Int m) => TVar -> m TVar
 fresh a = do
   i <- State.get
   State.modify (1+)
@@ -230,7 +226,7 @@ fresh a = do
 class Subst a where
   freeIn :: TVar -> a -> Bool
   rename :: TVar -> TVar -> a -> a
-  subst :: TVar -> Type -> a -> State Int a
+  subst :: (MonadState Int m) => TVar -> Type -> a -> m a
 
 instance Subst Type where
   freeIn a = \case
@@ -281,7 +277,7 @@ instance Subst Term where
     App f e -> App <$> subst a t f <*> subst a t e
     TApp f u -> TApp <$> subst a t f <*> subst a t u
 
-substAbst :: Subst a => TVar -> Type -> (TVar -> a -> a) -> (TVar, a) -> State Int a
+substAbst :: (MonadState Int m, Subst a) => TVar -> Type -> (TVar -> a -> a) -> (TVar, a) -> m a
 substAbst a t forall (b, u)
   | b == a = return (forall b u)
   | b `freeIn` t =
@@ -294,28 +290,28 @@ substAbst a t forall (b, u)
 
 infer :: Env -> Term -> StateT Int (Either Text) Type
 infer env@(termEnv, typeEnv) = \case
-  VarTerm x -> lift (lookupVar x termEnv)
+  VarTerm x -> lookupVar x termEnv
   Let x e_x e -> do
     t_x <- infer env e_x
     infer (addVar x t_x env) e
   Lam x t e -> do
-    lift (validType typeEnv t)
+    validType typeEnv t
     t_e <- infer (addVar x t env) e
     return (Arr t t_e)
   TLam a e -> do
     t_e <- infer (addTVar a env) e
     return (Forall a t_e)
   App f e -> do
-    (t1, t2) <- lift . matchArr =<< infer env f
+    (t1, t2) <- matchArr =<< infer env f
     t_e <- infer env e
-    lift (verifyEquiv t1 t_e)
+    verifyEquiv t1 t_e
     return t2
   TApp f t -> do
-    (a, u) <- lift . matchForall =<< infer env f
-    lift (validType typeEnv t)
-    inject (subst a t u)
+    (a, u) <- matchForall =<< infer env f
+    validType typeEnv t
+    subst a t u
 
-validType :: TypeEnv -> Type -> Either Text ()
+validType :: (MonadError Text m) => TypeEnv -> Type -> m ()
 validType env = \case
   VarType a -> lookupTVar a env
   Arr t1 t2 -> validType env t1 >> validType env t2
