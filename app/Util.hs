@@ -1,8 +1,9 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE BlockArguments, OverloadedStrings #-}
 
 module Util
   ( prompt
-  , Parser, symbol, parens, squares, isAlphaNum, alphaNum
+  , Parser, symbol, parens, squares
+  , isAlphaNum, alphaNum, lowerNum
   , parensIf
   ) where
 
@@ -33,6 +34,9 @@ isAlphaNum c = isAsciiUpper c || isAsciiLower c || isDigit c
 
 alphaNum :: Parser Char
 alphaNum = satisfy isAlphaNum
+
+lowerNum :: Parser Char
+lowerNum = satisfy \c -> isAsciiLower c || isDigit c
 
 parensIf :: Bool -> Text -> Text
 parensIf cond text

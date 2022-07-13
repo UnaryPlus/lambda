@@ -34,18 +34,17 @@ evaluate :: Defs -> Term -> IO ()
 evaluate defs term = do
   case runCoC eval of
     Left err -> IO.putStrLn err
-    Right (term', ty, norm) -> do
-      IO.putStrLn ("expanded: " <> pretty term')
-      IO.putStrLn ("type: " <> pretty ty)
+    Right (ty, norm) -> do
+      IO.putStrLn (": " <> pretty ty)
       IO.putStrLn (pretty norm)
   loop defs
   where
-    eval :: CoC (Term, Term, Term)
+    eval :: CoC (Term, Term)
     eval = do
       term' <- expandDefs defs term
       ty <- reduce =<< infer emptyEnv term'
       norm <- reduce term'
-      return (term', ty, norm)
+      return (ty, norm)
 
 define :: Defs -> Name -> Term -> IO ()
 define defs name term =
@@ -53,16 +52,14 @@ define defs name term =
     Left err -> do
       IO.putStrLn err
       loop defs
-    Right (term', ty) -> do
-      IO.putStrLn ("expanded: " <> pretty term')
-      IO.putStrLn ("type: " <> pretty ty)
+    Right ty -> do
+      IO.putStrLn (": " <> pretty ty)
       loop (insertDef name term defs)
   where
-    eval :: CoC (Term, Term)
+    eval :: CoC Term
     eval = do
       term' <- expandDefs defs term
-      ty <- reduce =<< infer emptyEnv term'
-      return (term', ty)
+      reduce =<< infer emptyEnv term'
 
 data Name
   = Name Text
