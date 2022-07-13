@@ -1,6 +1,10 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Util where
+module Util
+  ( prompt
+  , Parser, symbol, parens, squares, isAlphaNum, alphaNum
+  , parensIf
+  ) where
 
 import System.IO (hFlush, stdout)
 import Data.Char (isAsciiUpper, isAsciiLower, isDigit)
