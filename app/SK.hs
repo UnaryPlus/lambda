@@ -1,13 +1,15 @@
-{-# LANGUAGE OverloadedStrings, LambdaCase #-}
+{-# LANGUAGE BlockArguments, OverloadedStrings, LambdaCase #-}
 
 module SK where
 
-import Text.Parsec (runParser, (<|>), try, many1, chainl1, spaces, eof)
+import Text.Parsec (runParser, (<|>), try, chainl1, satisfy, spaces, eof)
+
 import Data.List (foldl')
-import Data.Text (Text, pack)
+import Data.Text (Text)
+import qualified Data.Text as Text
 import qualified Data.Text.IO as IO
 
-import Util (prompt, Parser, symbol, parens, lowerNum, parensIf)
+import Util (prompt, Parser, symbol, parens, isAlphaNum, parensIf)
 
 main :: IO ()
 main = loop []
@@ -18,22 +20,20 @@ loop defs = do
   case runParser parseCommand () "input" txt of
     Left err -> print err >> loop defs
     Right (Evaluate x) -> do
-      let x' = foldl' subst x defs
-      case reduce x' of
+      case evaluate x of
         Left n -> notDefined n
-        Right x'' -> do
-          IO.putStrLn ("- " <> pretty x')
-          IO.putStrLn ("- " <> pretty x'')
+        Right x' -> IO.putStrLn (pretty x')
       loop defs
     Right (Define n x) ->
-       case reduce (foldl' subst x defs) of
+       case evaluate x of
          Left m -> notDefined m >> loop defs
          Right _ -> loop ((n, x) : defs)
   where
-    notDefined n = IO.putStrLn (getName n <> " is not defined")
+    evaluate x = reduce (foldl' subst x defs)
+    notDefined n = putStrLn (getName n : " is not defined")
     pretty = prettyP False
 
-newtype Name = Name { getName :: Text }
+newtype Name = Name { getName :: Char }
   deriving (Eq)
 
 data Term
@@ -48,9 +48,9 @@ data Command
 
 parseName :: Parser Name
 parseName = do
-  str <- many1 lowerNum
+  c <- satisfy \c -> isAlphaNum c && c /= 's' && c /= 'k'
   spaces
-  return (Name (pack str))
+  return (Name c)
 
 parseCommand :: Parser Command
 parseCommand = do
@@ -70,8 +70,8 @@ parseTerm = chainl1 parseFactor (return App)
 
 parseFactor :: Parser Term
 parseFactor =
-  (symbol 'S' >> return S) <|>
-  (symbol 'K' >> return K) <|>
+  (symbol 's' >> return S) <|>
+  (symbol 'k' >> return K) <|>
   (Var <$> parseName) <|>
   parens parseTerm
 
@@ -86,17 +86,15 @@ reduce = \case
   S -> Right S
   K -> Right K
   Var n -> Left n
-  App (App (App S x) y) z -> do
-    x' <- reduce x
-    y' <- reduce y
-    z' <- reduce z
-    Right (App (App x' z') (App y' z'))
-  App (App K x) _ -> reduce x
-  App x y -> App <$> reduce x <*> reduce y
+  App x y ->
+    reduce x >>= \case
+      App (App S a) b -> reduce (App (App a y) (App b y))
+      App K a -> Right a
+      x' -> App x' <$> reduce y
 
 prettyP :: Bool -> Term -> Text
-prettyP appLeft = \case
-  S -> "S"
-  K -> "K"
-  Var n -> getName n
-  App x y -> parensIf appLeft (prettyP True x <> " " <> prettyP False y)
+prettyP appRight = \case
+  S -> "s"
+  K -> "k"
+  Var n -> Text.singleton (getName n)
+  App x y -> parensIf appRight (prettyP False x <> prettyP True y)
