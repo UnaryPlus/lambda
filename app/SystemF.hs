@@ -26,7 +26,7 @@ loop :: [Def] -> IO ()
 loop defs = do
   str <- prompt
   case runParser parseCommand () "input" str of
-    Left err -> print err
+    Left err -> print err >> loop defs
     Right (Evaluate term) -> do
       case runInfer defs term of
         Left err -> IO.putStrLn err
