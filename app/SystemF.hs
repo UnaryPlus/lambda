@@ -30,25 +30,26 @@ loop defs = do
     Right (Evaluate term) -> do
       case runInfer defs term of
         Left err -> IO.putStrLn err
-        Right ty -> do
-          IO.putStrLn ("type: " <> pretty ty)
-          IO.putStrLn $ Lambda.pretty $ Lambda.runReduce (compile term)
+        Right (term', ty) -> do
+          IO.putStrLn (": " <> pretty ty)
+          IO.putStrLn $ Lambda.pretty $ Lambda.runReduce (compile term')
       loop defs
     Right (DefTerm x term) ->
       case runInfer defs term of
         Left err -> IO.putStrLn err >> loop defs
-        Right ty -> do
-          IO.putStrLn ("type: " <> pretty ty)
+        Right (_, ty) -> do
+          IO.putStrLn (": " <> pretty ty)
           loop (Term x term : defs)
     Right (DefType a ty) ->
       case runValidType defs ty of
         Left err -> IO.putStrLn err >> loop defs
         Right () -> loop (Type a ty : defs)
 
-runInfer :: [Def] -> Term -> Either Text Type
+runInfer :: [Def] -> Term -> Either Text (Term, Type)
 runInfer defs e = flip evalStateT 0 do
   e' <- addDefs Let e defs
-  infer ([], []) e'
+  t <- infer ([], []) e'
+  return (e', t)
 
 runValidType :: [Def] -> Type -> Either Text ()
 runValidType defs t = let
@@ -64,12 +65,12 @@ addDef let_ e = \case
   Type a t -> subst a t e
 
 newtype Var = Var { showVar :: Text }
-  deriving (Eq)
+  deriving (Eq, Show)
 
 data TVar
   = TVar Text
   | TVarId Text Int
-  deriving (Eq)
+  deriving (Eq, Show)
 
 showTVar :: TVar -> Text
 showTVar = \case
@@ -83,11 +84,13 @@ data Term
   | TLam TVar Term
   | App Term Term
   | TApp Term Type
+  deriving (Show)
 
 data Type
   = VarType TVar
   | Arr Type Type
   | Forall TVar Type
+  deriving (Show)
 
 data Command
   = DefTerm Var Term
@@ -136,8 +139,18 @@ parseArg =
 parseFactor :: Parser Term
 parseFactor =
   (VarTerm . Var <$> parseName)
+  <|> parseLet
   <|> parseLam
   <|> parens parseTerm
+
+parseLet :: Parser Term
+parseLet = do
+  symbol '{'
+  x <- Var <$> parseName
+  symbol '='
+  e <- parseTerm
+  symbol '}'
+  Let x e <$> parseTerm
 
 parseLam :: Parser Term
 parseLam = do
@@ -194,17 +207,18 @@ lookupTVar a env
 matchArr :: (MonadError Text m) => Type -> m (Type, Type)
 matchArr = \case
   Arr t1 t2 -> return (t1, t2)
-  _ -> throwError "was expecting function type"
+  t -> throwError ("was expecting a function type:\n* " <> pretty t)
 
 matchForall :: (MonadError Text m) => Type -> m (TVar, Type)
 matchForall = \case
   Forall a t -> return (a, t)
-  _ -> throwError "was expecting forall type"
+  t -> throwError ("was expecting a ∀ type:\n* " <> pretty t)
 
 verifyEquiv :: (MonadError Text m) => Type -> Type -> m ()
 verifyEquiv t u
   | equivalent 0 t u = return ()
-  | otherwise = throwError "could not match types"
+  | otherwise = throwError ("could not match types:\n* "
+    <> pretty t <> "\n* " <> pretty u)
 
 equivalent :: Int -> Type -> Type -> Bool
 equivalent i = curry \case
