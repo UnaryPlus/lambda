@@ -18,19 +18,16 @@ loop :: [(Name, Term)] -> IO ()
 loop defs = do
   txt <- prompt
   case runParser parseCommand () "input" txt of
-    Left err -> print err >> loop defs
+    Left err -> do
+      print err
+      loop defs
     Right (Evaluate x) -> do
-      case evaluate x of
-        Left n -> notDefined n
-        Right x' -> IO.putStrLn (pretty x')
+      IO.putStrLn (pretty (evaluate x))
       loop defs
     Right (Define n x) ->
-       case evaluate x of
-         Left m -> notDefined m >> loop defs
-         Right _ -> loop ((n, x) : defs)
+      loop ((n, x) : defs)
   where
     evaluate x = reduce (foldl' subst x defs)
-    notDefined n = putStrLn (getName n : " is not defined")
     pretty = prettyP False
 
 newtype Name = Name { getName :: Char }
@@ -81,16 +78,16 @@ subst y (n, x) = case y of
   App xL xR -> App (subst xL (n, x)) (subst xR (n, x))
   _ -> y
 
-reduce :: Term -> Either Name Term
+reduce :: Term -> Term
 reduce = \case
-  S -> Right S
-  K -> Right K
-  Var n -> Left n
-  App x y ->
-    reduce x >>= \case
-      App (App S a) b -> reduce (App (App a y) (App b y))
-      App K a -> Right a
-      x' -> App x' <$> reduce y
+  App x y -> apply (reduce x, reduce y)
+  x -> x
+
+apply :: (Term, Term) -> Term
+apply = \case
+  (App K x, _) -> x
+  (App (App S x) y, z) -> apply (apply (x, z), apply (y, z))
+  (x, y) -> App x y
 
 prettyP :: Bool -> Term -> Text
 prettyP appRight = \case
