@@ -5,7 +5,7 @@ module CoC (main) where
 import qualified Data.List as List
 import qualified Control.Monad as Monad
 
-import Text.Parsec (runParser, (<|>), try, many, chainl1, satisfy, spaces, eof)
+import Text.Parsec (runParser, (<|>), char, many1, notFollowedBy, try, chainl1, spaces, eof)
 
 import Control.Monad.Except (ExceptT, throwError, runExceptT)
 import Control.Monad.State (State, evalState)
@@ -15,7 +15,7 @@ import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.IO as IO
 
-import Util (prompt, Parser, symbol, parens, squares, isAlphaNum, alphaNum, parensIf)
+import Util (prompt, Parser, symbol, parens, squares, alphaNum, parensIf)
 
 main :: IO ()
 main = loop emptyDefs
@@ -112,10 +112,11 @@ parseFactor =
 
 parseName :: Parser Name
 parseName = do
-  c <- satisfy \c -> c /= 'T' && c /= 'P' && isAlphaNum c
-  str <- many alphaNum
+  let reserved c = char c >> notFollowedBy alphaNum
+  notFollowedBy (reserved 'T' <|> reserved 'P')
+  str <- many1 alphaNum
   spaces
-  return $ Name (Text.pack (c:str))
+  return $ Name (Text.pack str)
 
 parseLam :: Parser Term
 parseLam = do
@@ -327,10 +328,10 @@ prettyAt ctx = \case
   Var n -> getText n
   Lam n x1 x2 ->
     parensIf (ctx == AppLeft || ctx == AppRight) $
-    "λ" <> getText n <> " [" <> pretty x1 <> "] " <> pretty x2
+    "λ" <> getText n <> "[" <> pretty x1 <> "] " <> pretty x2
   Pi n x1 x2 ->
     parensIf (ctx == AppLeft || ctx == AppRight) $
-    "∀" <> getText n <> " [" <> pretty x1 <> "] " <> pretty x2
+    "∀" <> getText n <> "[" <> pretty x1 <> "] " <> pretty x2
   App x1 x2 ->
     parensIf (ctx == AppRight) $
     prettyAt AppLeft x1 <> " " <> prettyAt AppRight x2
