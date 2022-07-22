@@ -14,6 +14,8 @@ import qualified Data.Text as Text
 import qualified Data.Text.IO as IO
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Data.Set (Set, (\\))
+import qualified Data.Set as Set
 
 import Control.Monad.Except (MonadError, ExceptT, throwError, runExceptT)
 import Control.Monad.State (MonadState, State, evalState)
@@ -79,6 +81,8 @@ data Type
   | Int
   | Arr Type Type
   | VarType TVar
+
+data Scheme = Forall [TVar] Type
 
 data Const
   = CTrue | CFalse
@@ -179,24 +183,46 @@ parseLam = do
   symbol '.'
   Lam x <$> parseTerm
 
-type Env = Map Var Type
+type Env = Map Var Scheme
 type Subst = Map TVar Type
 
-applySubst :: Subst -> Type -> Type
-applySubst s = \case
-  Bool -> Bool
-  Int -> Int
-  Arr t0 t1 -> Arr (applySubst s t0) (applySubst s t1)
-  VarType a -> fromMaybe (VarType a) (Map.lookup a s)
+class Substitutable a where
+  applySubst :: Subst -> a -> a
+  freeVars :: a -> Set TVar
+
+instance Substitutable Type where
+  applySubst s = \case
+    Bool -> Bool
+    Int -> Int
+    Arr t0 t1 -> Arr (applySubst s t0) (applySubst s t1)
+    VarType a -> fromMaybe (VarType a) (Map.lookup a s)
+
+  freeVars = \case
+    Bool -> Set.empty
+    Int -> Set.empty
+    Arr t0 t1 -> freeVars t0 <> freeVars t1
+    VarType a -> Set.singleton a
+
+instance Substitutable Scheme where
+  applySubst s (Forall as t) =
+    Forall as (applySubst s' t)
+    where s' = foldr Map.delete s as
+
+  freeVars (Forall as t) =
+    foldr Set.delete (freeVars t) as
+
+instance Substitutable a => Substitutable (Map k a) where
+  applySubst s = fmap (applySubst s)
+  freeVars = foldMap freeVars
 
 compose :: Subst -> Subst -> Subst
-compose s1 s0 = s1 <> fmap (applySubst s1) s0
+compose s1 s0 = s1 <> applySubst s1 s0
 
-fresh :: MonadState Int m => m TVar
+fresh :: MonadState Int m => m Type
 fresh = do
   i <- State.get
   State.modify (1+)
-  return (TVar i)
+  return (VarType (TVar i))
 
 constType :: MonadState Int m => Const -> m Type
 constType k
@@ -204,31 +230,43 @@ constType k
   | isInt k = return Int
   | k `elem` [And, Or] = return (op Bool)
   | k == Not = return (Arr Bool Bool)
-  | k == If = fresh >>= \a -> return (Arr Bool (op (VarType a)))
+  | k == If = fresh >>= \a -> return (Arr Bool (op a))
   | k `elem` [Add, Sub, Mul, Div, Mod] = return (op Int)
   | k `elem` [Eq, Lt, Gt] = return (Arr Int (Arr Int Bool))
   | otherwise = error "mistake in constType implementation"
   where op t = Arr t (Arr t t)
+
+instantiate :: MonadState Int m => Scheme -> m Type
+instantiate (Forall as t) = do
+  as' <- mapM (const fresh) as
+  let s = Map.fromList (zip as as')
+  return (applySubst s t)
+
+generalise :: Env -> Type -> Scheme
+generalise env t = Forall as t
+  where as = Set.toList (freeVars t \\ freeVars env)
 
 infer :: Env -> Term -> ExceptT Text (State Int) (Type, Subst)
 infer env = \case
   Const k -> (, Map.empty) <$> constType k
   VarTerm x -> case Map.lookup x env of
     Nothing -> throwError (showVar x <> " is not defined")
-    Just t -> return (t, Map.empty)
+    Just t -> (, Map.empty) <$> instantiate t
   Let x e0 e1 -> do
     (t0, s0) <- infer env e0
-    let env' = Map.insert x t0 (fmap (applySubst s0) env)
-    (t1, s1) <- infer env' e1
+    let env' = applySubst s0 env
+    let env'' = Map.insert x (generalise env' t0) env'
+    (t1, s1) <- infer env'' e1
     return (t1, s1 `compose` s0)
   Lam x e -> do
-    a <- VarType <$> fresh
-    (t, s) <- infer (Map.insert x a env) e
+    a <- fresh
+    let env' = Map.insert x (Forall [] a) env
+    (t, s) <- infer env' e
     return (Arr (applySubst s a) t, s)
   App e0 e1 -> do
     (t0, s0) <- infer env e0
-    (t1, s1) <- infer (fmap (applySubst s0) env) e1
-    a <- VarType <$> fresh
+    (t1, s1) <- infer (applySubst s0 env) e1
+    a <- fresh
     s2 <- unify (applySubst s1 t0) (Arr t1 a)
     return (applySubst s2 a, s2 `compose` s1 `compose` s0)
 
@@ -247,27 +285,17 @@ unify = curry \case
 
 bind :: MonadError Text m => TVar -> Type -> m Subst
 bind a t
-  | a `freeIn` t = throwError ("cannot substitute "
+  | Set.member a (freeVars t) = throwError ("cannot substitute "
       <> showTVar a <> ":\n* " <> prettyType t)
   | otherwise = return (Map.singleton a t)
 
-class FreeVars v a | a -> v where
-  freeIn :: v -> a -> Bool
-
-instance FreeVars TVar Type where
-  freeIn a = \case
-    Bool -> False
-    Int -> False
-    Arr t0 t1 -> a `freeIn` t0 || a `freeIn` t1
-    VarType b -> b == a
-
-instance FreeVars Var Term where
-  freeIn x = \case
-    Const _ -> False
-    VarTerm y -> y == x
-    Let y e0 e1 -> x `freeIn` e0 || (y /= x && x `freeIn` e1)
-    Lam y e -> y /= x && x `freeIn` e
-    App e0 e1 -> x `freeIn` e0 || x `freeIn` e1
+freeIn :: Var -> Term -> Bool
+freeIn x = \case
+  Const _ -> False
+  VarTerm y -> y == x
+  Let y e0 e1 -> x `freeIn` e0 || (y /= x && x `freeIn` e1)
+  Lam y e -> y /= x && x `freeIn` e
+  App e0 e1 -> x `freeIn` e0 || x `freeIn` e1
 
 runReduce :: Term -> Term
 runReduce e = evalState (reduce e) 0
