@@ -8,6 +8,7 @@ import qualified Lambda
 import qualified CoC
 import qualified SystemF
 import qualified SK
+import qualified HM
 
 main :: IO ()
 main = do
@@ -17,4 +18,5 @@ main = do
     ["coc"] -> CoC.main
     ["systemf"] -> SystemF.main
     ["sk"] -> SK.main
-    _ -> putStrLn "expecting argument: 'lambda', 'coc', 'systemf', 'sk'"
+    ["hm"] -> HM.main
+    _ -> putStrLn "expecting argument: 'lambda', 'coc', 'systemf', 'sk', 'hm'"

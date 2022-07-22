@@ -3,7 +3,7 @@
 module Util
   ( prompt
   , Parser, symbol, parens, squares
-  , isAlphaNum, alphaNum, lowerNum
+  , isAlphaNum, alphaNum, lowerNum, alpha
   , parensIf
   ) where
 
@@ -37,6 +37,9 @@ alphaNum = satisfy isAlphaNum
 
 lowerNum :: Parser Char
 lowerNum = satisfy \c -> isAsciiLower c || isDigit c
+
+alpha :: Parser Char
+alpha = satisfy \c -> isAsciiUpper c || isAsciiLower c
 
 parensIf :: Bool -> Text -> Text
 parensIf cond text
