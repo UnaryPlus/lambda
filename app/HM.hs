@@ -21,9 +21,6 @@ import qualified Control.Monad.State as State
 
 import Util (prompt, Parser, symbol, parens, alphaNum, alpha, parensIf)
 
---remove
-import Debug.Trace
-
 main :: IO ()
 main = loop []
 
