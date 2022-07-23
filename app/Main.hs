@@ -14,6 +14,7 @@ main :: IO ()
 main = do
   args <- getArgs
   case args of
+    [] -> Lambda.main
     ["lambda"] -> Lambda.main
     ["coc"] -> CoC.main
     ["systemf"] -> SystemF.main
