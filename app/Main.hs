@@ -1,3 +1,8 @@
+{-
+  (c) 2022 Owen Bechtel
+  License: MIT (see LICENSE)
+-}
+
 {-# LANGUAGE LambdaCase, OverloadedStrings #-}
 
 module Main (main) where

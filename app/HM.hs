@@ -1,3 +1,8 @@
+{-
+  (c) 2022 Owen Bechtel
+  License: MIT (see LICENSE)
+-}
+
 {-# LANGUAGE LambdaCase, BlockArguments, TupleSections, OverloadedStrings, FlexibleContexts, MultiParamTypeClasses, FunctionalDependencies #-}
 
 module HM (main) where

@@ -1,3 +1,8 @@
+{-
+  (c) 2022 Owen Bechtel
+  License: MIT (see LICENSE)
+-}
+
 {-# LANGUAGE BlockArguments, LambdaCase, OverloadedStrings, FlexibleContexts #-}
 
 module SystemF (main) where
