@@ -159,10 +159,8 @@ emptyEnv = Env []
 lookupEnv :: Name -> Env -> Maybe Term
 lookupEnv name (Env e) = List.lookup name e
 
-insertEnv :: Name -> Term -> Env -> CoC Env
-insertEnv name val (Env e)
-  | name `elem` map fst e = throwError (getText name <> " is already defined")
-  | otherwise = return $ Env ((name, val) : e)
+insertEnv :: Name -> Term -> Env -> Env
+insertEnv name val (Env e) = Env ((name, val) : e)
 
 runCoC :: CoC a -> Either Text a
 runCoC act = evalState (runExceptT act) 0
@@ -230,7 +228,7 @@ rename n n' = \case
 
 infer :: Env -> Term -> CoC Term
 infer env = \case
-  Type -> throwError "tried to infer type of T"
+  Type -> throwError "T has no type"
   Prop -> return Type
   Var n -> case lookupEnv n env of
     Nothing -> throwError (getText n <> " is not defined")
@@ -238,14 +236,12 @@ infer env = \case
   Lam n x1 x2 -> do
     t1 <- whnf =<< infer env x1
     verifyKind t1
-    env' <- insertEnv n x1 env
-    t2 <- infer env' x2
+    t2 <- infer (insertEnv n x1 env) x2
     return (Pi n x1 t2)
   Pi n x1 x2 -> do
     t1 <- whnf =<< infer env x1
     verifyKind t1
-    env' <- insertEnv n x1 env
-    t2 <- whnf =<< infer env' x2
+    t2 <- whnf =<< infer (insertEnv n x1 env) x2
     verifyKind t2
     return t2
   App x1 x2 -> do
