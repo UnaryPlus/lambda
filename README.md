@@ -29,9 +29,25 @@ When you define a constant, it is added as an argument to all succeeding terms. 
 Any sequence of basic latin letters and/or digits is a valid variable. For example, `x`, `0`, `Abc`, and `add1` can all be used as variables.
 
 ## SK combinator calculus
-s | k | _variable_ | _term_ _term_
+SK combinator calculus is a restricted version of lambda calculus. It has variables and application, but no λ-abstraction. There are two variables with a special meaning: `s` and `k`. `sxyz` reduces to `xz(yz)`, and `kxy` reduces to `x` (where `x`, `y`, and `z` stand for any term). Variables are limited to a single character, so you don't need to put spaces between them.
+
+```
+> s(s(skk)(kx))(ky)z
+zxy
+```
+
+You can define named constants using `=`.
+
+```
+> i = skk
+> f = ki
+> a = ss(k(kf))
+> afk
+k(skk)
+```
 
 ## System F
+
 
 ## Hindley-Milner type system
 
