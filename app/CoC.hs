@@ -298,14 +298,11 @@ subst n x = \case
 
 substAbst :: (Name -> Term -> Term -> Term) -> Name -> Term -> (Name, Term, Term) -> CoC Term
 substAbst lam n x (n1, x1, x2)
-  | n1 == n = lam n1 <$> sub x1 <*> return x2
-  | n1 `freeIn` x =
-      if n `freeIn` x2 then do
-        n1' <- fresh n1
-        let x2' = rename n1 n1' x2
-        lam n1' <$> sub x1 <*> sub x2'
-      else lam n1 <$> sub x1 <*> return x2
-  | otherwise = lam n1 <$> sub x1 <*> sub x2
+  | n1 /= n && n `freeIn` x2 = do
+      n1' <- fresh n1
+      let x2' = rename n1 n1' x2
+      lam n1' <$> sub x1 <*> sub x2'
+  | otherwise = lam n1 <$> sub x1 <*> return x2
   where sub = subst n x
 
 freeIn :: Name -> Term -> Bool
