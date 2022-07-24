@@ -10,10 +10,10 @@ module Main (main) where
 import System.Environment (getArgs)
 
 import qualified Lambda
-import qualified CoC
-import qualified SystemF
 import qualified SK
+import qualified SystemF
 import qualified HM
+import qualified CoC
 
 main :: IO ()
 main = do
@@ -21,8 +21,8 @@ main = do
   case args of
     [] -> Lambda.main
     ["lambda"] -> Lambda.main
-    ["coc"] -> CoC.main
-    ["systemf"] -> SystemF.main
     ["sk"] -> SK.main
+    ["systemf"] -> SystemF.main
     ["hm"] -> HM.main
-    _ -> putStrLn "expecting argument: 'lambda', 'coc', 'systemf', 'sk', 'hm'"
+    ["coc"] -> CoC.main
+    _ -> putStrLn "expecting argument: 'lambda', 'sk', 'systemf', 'hm', or 'coc'"
