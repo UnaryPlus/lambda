@@ -1,6 +1,6 @@
 # lambda
 A collection of interpreters, type checkers, and REPLs implemented in Haskell. Currently, the following languages are supported:
-* [Untyped lambda calculus](https://en.wikipedia.org/wiki/Lambda_calculus)
+* Untyped lambda calculus
 * [SK combinator calculus]
 * System F
 * Hindley-Milner type system
@@ -29,7 +29,7 @@ When you define a constant, it is added as an argument to all succeeding terms. 
 Any sequence of basic latin letters and/or digits is a valid variable. For example, `x`, `0`, `Abc`, and `add1` can all be used as variables.
 
 ## SK combinator calculus
-
+s | k | _variable_ | _term_ _term_
 
 ## System F
 
