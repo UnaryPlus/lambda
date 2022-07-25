@@ -1,10 +1,13 @@
 # lambda
 A collection of interpreters, type checkers, and REPLs implemented in Haskell. Currently, the following languages are supported:
+
 * Untyped lambda calculus
 * SK combinator calculus
 * System F
 * Hindley-Milner type system
 * Calculus of constructions
+
+You can access the different REPLs by passing an argument to the executable: "lambda", "sk", "systemf", "hm", or "coc".
 
 ## Untyped lambda calculus
 When you enter a term, the interpreter will reduce it to βη-normal form if possible, and display the result. You can use  `\` instead of `λ` for abstractions.
