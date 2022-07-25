@@ -68,7 +68,7 @@ In the REPL, you can use `\`, `->`, and `?` instead of `λ`, `→`, and `∀` re
 
 When you enter a well-typed term in the REPL, the term is compiled into the untyped lambda calculus by removing all type annotations. It is then reduced to βη-normal form and printed.
 
-```diff
+```
 > (\a. \x:a. x) [?a. a -> a -> a] (\a. \x:a. \y:a. x)
 : ∀a. a → a → a
 λx. λy. x
@@ -83,11 +83,8 @@ You can define named constants using `=`. When you type `x = e` in the repl, thi
 ```
 > nat ~ ∀a. (a -> a) -> a -> a
 > 0 = \a. \f:a -> a. \x:a. x
-: ∀a. (a → a) → a → a
 > S = \n:nat. \a. \f:a -> a. \x:a. f (n [a] f x)
-: (∀a. (a → a) → a → a) → ∀a. (a → a) → a → a
 > add = \n:nat. \k:nat. n [nat] S k
-: (∀a. (a → a) → a → a) → (∀a. (a → a) → a → a) → ∀a. (a → a) → a → a
 > add (S (S 0)) (S (S (S 0)))
 : ∀a. (a → a) → a → a
 λf. λx_1. f (f (f (f (f x_1))))
