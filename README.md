@@ -27,7 +27,7 @@ You can also define named constants using `=`.
 λx. λy. y
 ```
 
-When you define a constant, it is added as an argument to all succeeding terms. In the example above, when the user types `and true false`, the interpreter evaluates the expression `(λtrue. (λfalse. (λand. and true false) (λb. λc. b c false)) (λx. λy. y)) (λx. λy. x)`.
+When you define a constant, it is added as an argument to all succeeding inputs. In the example above, when the user types `and true false`, the interpreter evaluates the expression `(λtrue. (λfalse. (λand. and true false) (λb. λc. b c false)) (λx. λy. y)) (λx. λy. x)`.
 
 Any sequence of basic latin letters and/or digits is a valid variable. For example, `x`, `0`, `Abc`, and `add1` can all be used as variables.
 
@@ -64,7 +64,34 @@ e ::= x         variable
     | ∀α. τ     universal quantifier
 ```
 
-In the REPL, you can use `\`, `->`, and `?` in place of `λ`, `→`, and `∀` respectively. You can also create local variables using the syntax `{x = e1} e2`. This is equivalent to `(\x:τ. e2) e1`, where `τ` is the type of `e1`.
+In the REPL, you can use `\`, `->`, and `?` instead of `λ`, `→`, and `∀` respectively. You can also create local variables using the syntax `{x = e1} e2`. This is equivalent to `(λx:τ. e2) e1`, where `τ` is the type of `e1`.
+
+When you enter a well-typed term in the REPL, the term is compiled into the untyped lambda calculus by removing all type annotations. It is then reduced to βη-normal form and printed.
+
+```
+> (\a. \x:a. x) [?a. a -> a -> a] (\a. \x:a. \y:a. x)
+: ∀a. a → a → a
+λx. λy. x
+> (\a. \x:a. x) [?a. a -> a] (\a. \x:a. \y:a. x)
+could not match types:
+* ∀a. a → a
+* ∀a. a → a → a
+```
+
+You can define named constants using `=`. When you type `x = e` in the repl, this basically adds `{x = e}` before all succeeding inputs. You can also define type synonyms using `~`.
+
+```
+> nat ~ ∀a. (a -> a) -> a -> a
+> 0 = \a. \f:a -> a. \x:a. x
+: ∀a. (a → a) → a → a
+> S = \n:nat. \a. \f:a -> a. \x:a. f (n [a] f x)
+: (∀a. (a → a) → a → a) → ∀a. (a → a) → a → a
+> add = \n:nat. \k:nat. n [nat] S k
+: (∀a. (a → a) → a → a) → (∀a. (a → a) → a → a) → ∀a. (a → a) → a → a
+> add (S (S 0)) (S (S (S 0)))
+: ∀a. (a → a) → a → a
+λf. λx_1. f (f (f (f (f x_1))))
+```
 
 ## Hindley-Milner type system
 
