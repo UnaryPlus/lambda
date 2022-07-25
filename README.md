@@ -64,7 +64,7 @@ e ::= x         variable
     | ∀α. τ     universal quantifier
 ```
 
-
+In the REPL, you can use `\`, `->`, and `?` in place of `λ`, `→`, and `∀` respectively. You can also create local variables using the syntax `{x = e1} e2`. This is equivalent to `(\x:τ. e2) e1`, where `τ` is the type of `e1`.
 
 ## Hindley-Milner type system
 
