@@ -49,7 +49,13 @@ k(skk)
 ## System F
 System F is a typed lambda calculus with universal quantifiers. There are separate syntaxes for terms (e) and types (τ):
 
-e ::= x | λx:τ. e | λα. e | e e | e [τ]
+```
+e ::= x          variable
+    | λx:τ. e    term abstraction
+    | λα. e      type abstraction
+    | e e        term application
+    | e [τ]      type application
+```
 
 τ ::= α | τ → τ | ∀α. τ
 
