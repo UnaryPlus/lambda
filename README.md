@@ -50,14 +50,18 @@ k(skk)
 System F is a typed lambda calculus with universal quantifiers. There are separate syntaxes for terms (e) and types (τ):
 
 ```
-e ::= x          variable
-    | λx:τ. e    term abstraction
-    | λα. e      type abstraction
-    | e e        term application
-    | e [τ]      type application
+e ::= x         variable
+    | λx:τ. e   term abstraction
+    | λα. e     type abstraction
+    | e e       term application
+    | e [τ]     type application
+
+τ ::= α         type variable
+    | τ → τ     function type
+    | ∀α. τ     universal quantifier
 ```
 
-τ ::= α | τ → τ | ∀α. τ
+
 
 ## Hindley-Milner type system
 
