@@ -9,8 +9,9 @@ module CoC (main) where
 
 import qualified Data.List as List
 import qualified Control.Monad as Monad
+import Control.Monad ((>=>))
 
-import Text.Parsec (runParser, (<|>), char, many1, notFollowedBy, try, chainl1, spaces, eof)
+import Text.Parsec (runParser, (<|>), char, digit, many1, notFollowedBy, try, chainl1, spaces, eof)
 
 import Control.Monad.Except (ExceptT, throwError, runExceptT)
 import Control.Monad.State (State, evalState)
@@ -20,7 +21,7 @@ import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.IO as IO
 
-import Util (prompt, Parser, symbol, parens, squares, alphaNum, parensIf)
+import Util (prompt, Parser, symbol, parens, squares, alphaNum, alpha, parensIf)
 
 main :: IO ()
 main = loop emptyDefs
@@ -77,8 +78,7 @@ showName = \case
   NameId text i -> text <> "_" <> Text.pack (show i)
 
 data Term
-  = Type
-  | Prop
+  = Type Int --should be non-negative
   | Var Name
   | Lam Name Term Term
   | Pi Name Term Term
@@ -109,19 +109,24 @@ parseTerm = chainl1 parseFactor (return App)
 parseFactor :: Parser Term
 parseFactor =
   (Var <$> parseName)
-  <|> (symbol 'T' >> return Type)
-  <|> (symbol 'P' >> return Prop)
+  <|> parseSort
   <|> parseLam
   <|> parsePi
   <|> parens parseTerm
 
 parseName :: Parser Name
 parseName = do
-  let reserved c = char c >> notFollowedBy alphaNum
-  notFollowedBy (reserved 'T' <|> reserved 'P')
+  notFollowedBy (char 'T' >> notFollowedBy alpha)
   str <- many1 alphaNum
   spaces
   return $ Name (Text.pack str)
+
+parseSort :: Parser Term
+parseSort = do
+  _ <- char 'T'
+  i <- (read <$> many1 digit) <|> return 0
+  spaces
+  return (Type i)
 
 parseLam :: Parser Term
 parseLam = do
@@ -175,30 +180,33 @@ fresh name = do
     Name text -> NameId text i
     NameId text _ -> NameId text i
 
-verifySort :: Term -> CoC ()
-verifySort = \case
-  Type -> return ()
-  Prop -> return ()
-  x -> throwError ("was expecting T or P:\n* " <> pretty x)
+level :: Term -> CoC Int
+level = whnf >=> \case
+  Type i -> return i
+  x -> throwError ("was expecting a sort:\n* " <> pretty x)
 
 matchPi :: Term -> CoC (Name, Term, Term)
-matchPi = \case
+matchPi = whnf >=> \case
   Pi n x1 x2 -> return (n, x1, x2)
   x -> throwError ("was expecting a ∀ type:\n* " <> pretty x)
 
-verifyEquiv :: Term -> Term -> CoC ()
-verifyEquiv x1 x2 = do
+verifyApp :: Term -> Term -> CoC ()
+verifyApp x1 x2 = do
   x1' <- reduce x1
   x2' <- reduce x2
-  test <- equivalent x1' x2'
+  test <- validApp x1' x2'
   if test then return ()
     else throwError ("could not match terms:\n* "
       <> pretty x1' <> "\n* " <> pretty x2')
 
+validApp :: Term -> Term -> CoC Bool
+validApp = curry \case
+  (Type i, Type j) -> return (i <= j)
+  (x1, x2) -> equivalent x1 x2
+
 equivalent :: Term -> Term -> CoC Bool
 equivalent = curry \case
-  (Type, Type) -> return True
-  (Prop, Prop) -> return True
+  (Type i, Type j) -> return (i == j)
   (Var n1, Var n2) -> return (n1 == n2)
   (Lam n1 x1 y1, Lam n2 x2 y2) -> equivAbst (n1, x1, y1) (n2, x2, y2)
   (Pi n1 x1 y1, Pi n2 x2 y2) -> equivAbst (n1, x1, y1) (n2, x2, y2)
@@ -214,8 +222,7 @@ equivAbst (n1, x1, y1) (n2, x2, y2) = do
 
 rename :: Name -> Name -> Term -> Term
 rename n n' = \case
-  Type -> Type
-  Prop -> Prop
+  Type i -> Type i
   Var n1
     | n1 == n -> Var n'
     | otherwise -> Var n1
@@ -230,30 +237,26 @@ rename n n' = \case
 
 infer :: Env -> Term -> CoC Term
 infer env = \case
-  Type -> throwError "T has no type"
-  Prop -> return Type
+  Type i -> return (Type (i + 1))
   Var n -> case lookupEnv n env of
     Nothing -> throwError (showName n <> " is not defined")
     Just t -> return t
   Lam n x1 x2 -> do
-    t1 <- whnf =<< infer env x1
-    verifySort t1
+    _ <- level =<< infer env x1
     env' <- insertEnv n x1 env
     t2 <- infer env' x2
     return (Pi n x1 t2)
   Pi n x1 x2 -> do
-    t1 <- whnf =<< infer env x1
-    verifySort t1
+    i1 <- level =<< infer env x1
     env' <- insertEnv n x1 env
-    t2 <- whnf =<< infer env' x2
-    verifySort t2
-    return t2
+    i2 <- level =<< infer env' x2
+    let i = if i2 == 0 then 0 else max i1 i2
+    return (Type i)
   App x1 x2 -> do
-    t1 <- whnf =<< infer env x1
-    (n, t2, t3) <- matchPi t1
-    t4 <- infer env x2
-    verifyEquiv t4 t2
-    subst n x2 t3
+    (n, tA, tB) <- matchPi =<< infer env x1
+    t2 <- infer env x2
+    verifyApp t2 tA
+    subst n x2 tB
 
 whnf :: Term -> CoC Term
 whnf = \case
@@ -265,8 +268,7 @@ whnf = \case
 
 reduce :: Term -> CoC Term
 reduce = \case
-  Type -> return Type
-  Prop -> return Prop
+  Type i -> return (Type i)
   Var n -> return (Var n)
   --reduce type and body, eta-reduce if possible
   Lam n x1 x2 -> do
@@ -286,8 +288,7 @@ reduce = \case
 
 subst :: Name -> Term -> Term -> CoC Term
 subst n x = \case
-  Type -> return Type
-  Prop -> return Prop
+  Type i -> return (Type i)
   Var n1
     | n1 == n -> return x
     | otherwise -> return (Var n1)
@@ -307,8 +308,7 @@ substAbst lam n x (n1, x1, x2)
 
 freeIn :: Name -> Term -> Bool
 freeIn n = \case
-  Type -> False
-  Prop -> False
+  Type _ -> False
   Var n1 -> n1 == n
   Lam n1 x1 x2 -> n `freeIn` x1 || (n1 /= n && n `freeIn` x2)
   Pi n1 x1 x2 -> n `freeIn` x1 || (n1 /= n && n `freeIn` x2)
@@ -325,8 +325,8 @@ pretty = prettyAt Outer
 
 prettyAt :: Context -> Term -> Text
 prettyAt ctx = \case
-  Type -> "T"
-  Prop -> "P"
+  Type 0 -> "T"
+  Type i -> "T" <> Text.pack (show i)
   Var n -> showName n
   Lam n x1 x2 ->
     parensIf (ctx == AppLeft || ctx == AppRight) $
