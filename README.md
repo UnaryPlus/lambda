@@ -64,7 +64,7 @@ e ::= x         variable
     | ∀α. τ     universal quantifier
 ```
 
-In the REPL, you can use `\`, `->`, and `?` instead of `λ`, `→`, and `∀` respectively. You can also create local variables using the syntax `{x = e1} e2`. This is equivalent to `(λx:τ. e2) e1`, where `τ` is the type of `e1`.
+In the REPL, you can use `\`, `->`, and `?` instead of `λ`, `→`, and `∀` respectively. You can also create local variables using the syntax `{x = e1} e2`. This syntax is equivalent to `(λx:τ. e2) e1`, where `τ` is the type of `e1`.
 
 When you enter a well-typed term in the REPL, the term is compiled into the untyped lambda calculus by removing all type annotations. It is then reduced to βη-normal form and printed.
 
@@ -78,7 +78,7 @@ could not match types:
 * ∀a. a → a → a
 ```
 
-You can define named constants using `=`. When you type `x = e` in the repl, this basically adds `{x = e}` before all succeeding inputs. You can also define type synonyms using `~`.
+You can define named constants using `=`. When you type `x = e` in the REPL, the interpreter adds `{x = e}` before all succeeding inputs. You can also define type synonyms using `~`.
 
 ```
 > nat ~ ?a. (a -> a) -> a -> a
@@ -105,7 +105,7 @@ e ::= k           constant
     | α           type variable
 ```
 
-Universal quantifiers are not allowed within function types. This means that booleans, numbers, and data structures cannot be encoded in the usual way, and must be built in to the calculus itself. My implementation includes the following type constants (ι) and term constants (k):
+Universal quantifiers are not allowed within function types. Therefore, booleans, numbers, and data structures cannot be encoded in the usual way, and must be built in to the calculus itself. My implementation includes the following type constants (ι) and term constants (k):
 
 ```
 ι ::= Int | Bool
@@ -187,4 +187,4 @@ Unlike in System F, one can define type constructors (functions from types to ty
 > vec = \n:natT. \a:T. n (pair a) unit
 ```
 
-Without inductive types, it is impossible to create non-trivial functions of type `nat → a`, where `a` has type `T1` or greater. Therefore, to define `vec`, one must create a higher-level natural numbers type (called `natT` above). 
+Without inductive types, it is impossible to create non-trivial functions of type `nat → a`, where `a` has type `T1` or greater. Therefore, to define `vec`, one must create a higher-level natural numbers type (called `natT` above).
