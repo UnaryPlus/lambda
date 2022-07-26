@@ -21,7 +21,7 @@ import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.IO as IO
 
-import Util (prompt, Parser, symbol, parens, squares, alphaNum, alpha, parensIf)
+import Util (prompt, Parser, symbol, parens, alphaNum, alpha, parensIf)
 
 main :: IO ()
 main = loop emptyDefs
@@ -132,14 +132,18 @@ parseLam :: Parser Term
 parseLam = do
   symbol '\\' <|> symbol 'λ'
   n <- parseName
-  t <- squares parseTerm
+  symbol ':'
+  t <- parseTerm
+  symbol '.'
   Lam n t <$> parseTerm
 
 parsePi :: Parser Term
 parsePi = do
   symbol '?' <|> symbol '∀'
   n <- parseName
-  t <- squares parseTerm
+  symbol ':'
+  t <- parseTerm
+  symbol '.'
   Pi n t <$> parseTerm
 
 type CoC = ExceptT Text (State Int)
@@ -328,10 +332,10 @@ prettyAt ctx = \case
   Var n -> showName n
   Lam n x1 x2 ->
     parensIf (ctx == AppLeft || ctx == AppRight) $
-    "λ" <> showName n <> "[" <> pretty x1 <> "] " <> pretty x2
+    "λ" <> showName n <> ":" <> pretty x1 <> ". " <> pretty x2
   Pi n x1 x2 ->
     parensIf (ctx == AppLeft || ctx == AppRight) $
-    "∀" <> showName n <> "[" <> pretty x1 <> "] " <> pretty x2
+    "∀" <> showName n <> ":" <> pretty x1 <> ". " <> pretty x2
   App x1 x2 ->
     parensIf (ctx == AppRight) $
     prettyAt AppLeft x1 <> " " <> prettyAt AppRight x2
