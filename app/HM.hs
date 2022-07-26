@@ -3,7 +3,7 @@
   License: MIT (see LICENSE)
 -}
 
-{-# LANGUAGE LambdaCase, BlockArguments, TupleSections, OverloadedStrings, FlexibleContexts, MultiParamTypeClasses, FunctionalDependencies #-}
+{-# LANGUAGE LambdaCase, BlockArguments, TupleSections, OverloadedStrings, FlexibleContexts #-}
 
 module HM (main) where
 
