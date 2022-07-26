@@ -74,18 +74,27 @@ data Name
   | NameId Text Int
   deriving (Eq, Ord)
 
+data Bind
+  = Bind Name
+  | Throwaway
+  deriving (Eq)
+
 showName :: Name -> Text
 showName = \case
   Name text -> text
   NameId text i -> text <> "_" <> Text.pack (show i)
 
+showBind :: Bind -> Text
+showBind = \case
+  Bind n -> showName n
+  Throwaway -> "_"
+
 data Term
   = Type Int --should be non-negative
   | Var Name
-  | Lam Name Term Term
-  | Pi Name Term Term
+  | Lam Bind Term Term
+  | Pi Bind Term Term
   | App Term Term
-  deriving (Eq)
 
 data Command
   = Define Name Term
@@ -123,6 +132,11 @@ parseName = do
   spaces
   return $ Name (Text.pack str)
 
+parseBind :: Parser Bind
+parseBind =
+  (symbol '_' >> return Throwaway)
+  <|> (Bind <$> parseName)
+
 parseSort :: Parser Term
 parseSort = do
   _ <- char 'T'
@@ -133,7 +147,7 @@ parseSort = do
 parseLam :: Parser Term
 parseLam = do
   symbol '\\' <|> symbol 'λ'
-  n <- parseName
+  n <- parseBind
   symbol ':'
   t <- parseTerm
   symbol '.'
@@ -142,7 +156,7 @@ parseLam = do
 parsePi :: Parser Term
 parsePi = do
   symbol '?' <|> symbol '∀'
-  n <- parseName
+  n <- parseBind
   symbol ':'
   t <- parseTerm
   symbol '.'
@@ -173,10 +187,12 @@ emptyEnv = Env []
 lookupEnv :: Name -> Env -> Maybe Term
 lookupEnv name (Env e) = List.lookup name e
 
-insertEnv :: Name -> Term -> Env -> CoC Env
-insertEnv name val (Env e)
-  | name `elem` map fst e = throwError (showName name <> " is already defined")
-  | otherwise = return $ Env ((name, val) : e)
+insertEnv :: Bind -> Term -> Env -> CoC Env
+insertEnv bind val (Env e) = case bind of
+  Bind name
+    | name `elem` map fst e -> throwError (showName name <> " is already defined")
+    | otherwise -> return $ Env ((name, val) : e)
+  Throwaway -> return (Env e)
 
 fresh :: Name -> CoC Name
 fresh name = do
@@ -191,7 +207,7 @@ level = whnf >=> \case
   Type i -> return i
   x -> throwError ("was expecting a sort:\n* " <> pretty x)
 
-matchPi :: Term -> CoC (Name, Term, Term)
+matchPi :: Term -> CoC (Bind, Term, Term)
 matchPi = whnf >=> \case
   Pi n x1 x2 -> return (n, x1, x2)
   x -> throwError ("was expecting a ∀ type:\n* " <> pretty x)
@@ -223,13 +239,16 @@ equivalent = curry \case
   (x1, x2) -> throwError ("could not match terms:\n* "
     <> pretty x1 <> "\n* " <> pretty x2)
 
-checkAbst :: (Name, Term, Term) -> (Name, Term, Term) -> (Term -> Term -> CoC ()) -> CoC ()
-checkAbst (n1, x1, y1) (n2, x2, y2) check = do
+checkAbst :: (Bind, Term, Term) -> (Bind, Term, Term) -> (Term -> Term -> CoC ()) -> CoC ()
+checkAbst (b1, x1, y1) (b2, x2, y2) check = do
   equivalent x1 x2
-  temp <- fresh (Name "")
-  let y1' = rename n1 temp y1
-  let y2' = rename n2 temp y2
-  check y1' y2'
+  case (b1, b2) of
+    (Bind n1, Bind n2) -> do
+      temp <- fresh n1
+      let y1' = rename n1 temp y1
+      let y2' = rename n2 temp y2
+      check y1' y2'
+    _ -> check y1 y2
 
 rename :: Name -> Name -> Term -> Term
 rename n n' = \case
@@ -238,10 +257,10 @@ rename n n' = \case
     | n1 == n -> Var n'
     | otherwise -> Var n1
   Lam n1 x1 x2
-    | n1 == n -> Lam n1 (ren x1) x2
+    | n1 == Bind n -> Lam n1 (ren x1) x2
     | otherwise -> Lam n1 (ren x1) (ren x2)
   Pi n1 x1 x2
-    | n1 == n -> Pi n1 (ren x1) x2
+    | n1 == Bind n -> Pi n1 (ren x1) x2
     | otherwise -> Pi n1 (ren x1) (ren x2)
   App x1 x2 -> App (ren x1) (ren x2)
   where ren = rename n n'
@@ -283,12 +302,12 @@ reduce = \case
   Type i -> return (Type i)
   Var n -> return (Var n)
   --reduce type and body, eta-reduce if possible
-  Lam n x1 x2 -> do
+  Lam b x1 x2 -> do
     x1' <- reduce x1
     x2' <- reduce x2
     return case x2' of
-      App y1 y2 | y2 == Var n, not (n `freeIn` y1) -> y1
-      _ -> Lam n x1' x2'
+      App y1 (Var n') | Bind n <- b, n' == n, not (n `freeIn` y1) -> y1
+      _ -> Lam b x1' x2'
   Pi n x1 x2 -> Pi n <$> reduce x1 <*> reduce x2
   --reduce both terms, beta-reduce if possible
   App x1 x2 -> do
@@ -298,32 +317,42 @@ reduce = \case
       Lam n _ r -> reduce =<< subst n x2' r
       _ -> return (App x1' x2')
 
-subst :: Name -> Term -> Term -> CoC Term
-subst n x = \case
-  Type i -> return (Type i)
-  Var n1
-    | n1 == n -> return x
-    | otherwise -> return (Var n1)
-  Lam n1 x1 x2 -> substAbst Lam n x (n1, x1, x2)
-  Pi n1 x1 x2 -> substAbst Pi n x (n1, x1, x2)
-  App x1 x2 -> App <$> sub x1 <*> sub x2
-  where sub = subst n x
+class SubstName a where
+  subst :: a -> Term -> Term -> CoC Term
 
-substAbst :: (Name -> Term -> Term -> Term) -> Name -> Term -> (Name, Term, Term) -> CoC Term
-substAbst lam n x (n1, x1, x2)
-  | n1 /= n && n `freeIn` x2 = do
-      n1' <- fresh n1
-      let x2' = rename n1 n1' x2
-      lam n1' <$> sub x1 <*> sub x2'
-  | otherwise = lam n1 <$> sub x1 <*> return x2
+instance SubstName Name where
+  subst n x = \case
+    Type i -> return (Type i)
+    Var n1
+      | n1 == n -> return x
+      | otherwise -> return (Var n1)
+    Lam n1 x1 x2 -> substAbst n x Lam (n1, x1, x2)
+    Pi n1 x1 x2 -> substAbst n x Pi (n1, x1, x2)
+    App x1 x2 -> App <$> sub x1 <*> sub x2
+    where sub = subst n x
+
+instance SubstName Bind where
+  subst b x = case b of
+    Bind n -> subst n x
+    Throwaway -> return
+
+substAbst :: Name -> Term -> (Bind -> Term -> Term -> Term) -> (Bind, Term, Term) -> CoC Term
+substAbst n x lam (b, x1, x2)
+  | b /= Bind n && n `freeIn` x2 = case b of
+      Bind n1 -> do
+        n1' <- fresh n1
+        let x2' = rename n1 n1' x2
+        lam (Bind n1') <$> sub x1 <*> sub x2'
+      Throwaway -> lam Throwaway <$> sub x1 <*> sub x2
+  | otherwise = lam b <$> sub x1 <*> return x2
   where sub = subst n x
 
 freeIn :: Name -> Term -> Bool
 freeIn n = \case
   Type _ -> False
   Var n1 -> n1 == n
-  Lam n1 x1 x2 -> n `freeIn` x1 || (n1 /= n && n `freeIn` x2)
-  Pi n1 x1 x2 -> n `freeIn` x1 || (n1 /= n && n `freeIn` x2)
+  Lam n1 x1 x2 -> n `freeIn` x1 || (n1 /= Bind n && n `freeIn` x2)
+  Pi n1 x1 x2 -> n `freeIn` x1 || (n1 /= Bind n && n `freeIn` x2)
   App x1 x2 -> n `freeIn` x1 || n `freeIn` x2
 
 data Context
@@ -346,19 +375,21 @@ prettyAt ctx env = \case
     parensIf (ctx == AppRight) $
     prettyAt AppLeft env x1 <> " " <> prettyAt AppRight env x2
 
-prettyAbst :: Context -> Set Name -> Text -> (Name, Term, Term) -> Text
-prettyAbst ctx env sym (n, x1, x2) =
+prettyAbst :: Context -> Set Name -> Text -> (Bind, Term, Term) -> Text
+prettyAbst ctx env sym (b, x1, x2) =
   parensIf (ctx == AppLeft || ctx == AppRight) $
-  sym <> showName n'
+  sym <> showBind b'
   <> ":" <> parensIf (long x1) (prettyAt Outer env x1)
   <> ". " <> prettyAt Outer env' x2'
   where
-    (n', x2') = case n of
-      Name _ -> (n, x2)
-      NameId txt _
-        | Name txt `Set.member` env || Name txt `freeIn` x2 -> (n, x2)
-        | otherwise -> (Name txt, rename n (Name txt) x2)
-    env' = Set.insert n' env
+    (b', x2') = case b of
+      Bind n@(NameId text _)
+        | Name text `Set.member` env || Name text `freeIn` x2 -> (b, x2)
+        | otherwise -> (Bind (Name text), rename n (Name text) x2)
+      _ -> (b, x2)
+    env' = case b' of
+      Bind n -> Set.insert n env
+      Throwaway -> env
 
 long :: Term -> Bool
 long = \case
