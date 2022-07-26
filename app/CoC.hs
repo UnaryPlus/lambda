@@ -196,8 +196,10 @@ matchPi = whnf >=> \case
 
 runIncludes :: Term -> Term -> CoC ()
 runIncludes x1 x2 = do
+  x1' <- reduce x1
+  x2' <- reduce x2
   i <- State.get
-  includes x1 x2
+  includes x1' x2'
   State.put i
 
 includes :: Term -> Term -> CoC ()
