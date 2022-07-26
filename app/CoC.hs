@@ -11,7 +11,7 @@ import qualified Data.List as List
 import qualified Control.Monad as Monad
 import Control.Monad ((>=>))
 
-import Text.Parsec (runParser, (<|>), char, digit, many1, notFollowedBy, try, chainl1, spaces, eof)
+import Text.Parsec (runParser, (<|>), char, digit, many1, notFollowedBy, try, chainl1, chainr1, spaces, eof)
 
 import Control.Monad.Except (ExceptT, throwError, runExceptT)
 import Control.Monad.State (State, evalState)
@@ -115,7 +115,12 @@ parseDefine = do
   Define name <$> parseTerm
 
 parseTerm :: Parser Term
-parseTerm = chainl1 parseFactor (return App)
+parseTerm = chainr1 app arrow
+  where
+    app = chainl1 parseFactor (return App)
+    arrow = do
+      (char '-' >> symbol '>') <|> symbol '→'
+      return (Pi Throwaway)
 
 parseFactor :: Parser Term
 parseFactor =
@@ -357,6 +362,8 @@ freeIn n = \case
 
 data Context
   = Outer
+  | ArrowLeft
+  | ArrowRight
   | AppLeft
   | AppRight
   deriving (Eq)
@@ -369,6 +376,9 @@ prettyAt ctx env = \case
   Type 0 -> "T"
   Type i -> "T" <> Text.pack (show i)
   Var n -> showName n
+  Pi Throwaway x1 x2 ->
+    parensIf (ctx == ArrowLeft || ctx == AppLeft || ctx == AppRight) $
+    prettyAt ArrowLeft env x1 <> " → " <> prettyAt ArrowRight env x2
   Lam n x1 x2 -> prettyAbst ctx env "λ" (n, x1, x2)
   Pi n x1 x2 -> prettyAbst ctx env "∀" (n, x1, x2)
   App x1 x2 ->
@@ -377,7 +387,7 @@ prettyAt ctx env = \case
 
 prettyAbst :: Context -> Set Name -> Text -> (Bind, Term, Term) -> Text
 prettyAbst ctx env sym (b, x1, x2) =
-  parensIf (ctx == AppLeft || ctx == AppRight) $
+  parensIf (ctx == ArrowLeft || ctx == AppLeft || ctx == AppRight) $
   sym <> showBind b'
   <> ":" <> parensIf (long x1) (prettyAt Outer env x1)
   <> ". " <> prettyAt Outer env' x2'
