@@ -194,6 +194,12 @@ matchPi = whnf >=> \case
   Pi n x1 x2 -> return (n, x1, x2)
   x -> throwError ("was expecting a ∀ type:\n* " <> pretty x)
 
+runIncludes :: Term -> Term -> CoC ()
+runIncludes x1 x2 = do
+  i <- State.get
+  includes x1 x2
+  State.put i
+
 includes :: Term -> Term -> CoC ()
 includes = curry \case
   (Type i, Type j)
@@ -257,7 +263,7 @@ infer env = \case
   App x1 x2 -> do
     (n, tA, tB) <- matchPi =<< infer env x1
     t2 <- infer env x2
-    includes t2 tA
+    runIncludes t2 tA
     subst n x2 tB
 
 whnf :: Term -> CoC Term
