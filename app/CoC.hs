@@ -71,8 +71,8 @@ data Name
   | NameId Text Int
   deriving (Eq, Ord)
 
-getText :: Name -> Text
-getText = \case
+showName :: Name -> Text
+showName = \case
   Name text -> text
   NameId text i -> text <> "_" <> Text.pack (show i)
 
@@ -137,11 +137,12 @@ parsePi = do
   t <- squares parseTerm
   Pi n t <$> parseTerm
 
-newtype Defs = Defs [(Name, Term)]
-
-newtype Env = Env [(Name, Term)]
-
 type CoC = ExceptT Text (State Int)
+
+runCoC :: CoC a -> Either Text a
+runCoC act = evalState (runExceptT act) 0
+
+newtype Defs = Defs [(Name, Term)]
 
 emptyDefs :: Defs
 emptyDefs = Defs []
@@ -153,6 +154,8 @@ expandDefs :: Defs -> Term -> CoC Term
 expandDefs (Defs d) term = Monad.foldM expandDef term d
   where expandDef x (n, v) = subst n v x
 
+newtype Env = Env [(Name, Term)]
+
 emptyEnv :: Env
 emptyEnv = Env []
 
@@ -161,11 +164,8 @@ lookupEnv name (Env e) = List.lookup name e
 
 insertEnv :: Name -> Term -> Env -> CoC Env
 insertEnv name val (Env e)
-  | name `elem` map fst e = throwError (getText name <> " is already defined")
+  | name `elem` map fst e = throwError (showName name <> " is already defined")
   | otherwise = return $ Env ((name, val) : e)
-
-runCoC :: CoC a -> Either Text a
-runCoC act = evalState (runExceptT act) 0
 
 fresh :: Name -> CoC Name
 fresh name = do
@@ -175,8 +175,8 @@ fresh name = do
     Name text -> NameId text i
     NameId text _ -> NameId text i
 
-verifyKind :: Term -> CoC ()
-verifyKind = \case
+verifySort :: Term -> CoC ()
+verifySort = \case
   Type -> return ()
   Prop -> return ()
   x -> throwError ("was expecting T or P:\n* " <> pretty x)
@@ -233,20 +233,20 @@ infer env = \case
   Type -> throwError "T has no type"
   Prop -> return Type
   Var n -> case lookupEnv n env of
-    Nothing -> throwError (getText n <> " is not defined")
+    Nothing -> throwError (showName n <> " is not defined")
     Just t -> return t
   Lam n x1 x2 -> do
     t1 <- whnf =<< infer env x1
-    verifyKind t1
+    verifySort t1
     env' <- insertEnv n x1 env
     t2 <- infer env' x2
     return (Pi n x1 t2)
   Pi n x1 x2 -> do
     t1 <- whnf =<< infer env x1
-    verifyKind t1
+    verifySort t1
     env' <- insertEnv n x1 env
     t2 <- whnf =<< infer env' x2
-    verifyKind t2
+    verifySort t2
     return t2
   App x1 x2 -> do
     t1 <- whnf =<< infer env x1
@@ -327,13 +327,13 @@ prettyAt :: Context -> Term -> Text
 prettyAt ctx = \case
   Type -> "T"
   Prop -> "P"
-  Var n -> getText n
+  Var n -> showName n
   Lam n x1 x2 ->
     parensIf (ctx == AppLeft || ctx == AppRight) $
-    "λ" <> getText n <> "[" <> pretty x1 <> "] " <> pretty x2
+    "λ" <> showName n <> "[" <> pretty x1 <> "] " <> pretty x2
   Pi n x1 x2 ->
     parensIf (ctx == AppLeft || ctx == AppRight) $
-    "∀" <> getText n <> "[" <> pretty x1 <> "] " <> pretty x2
+    "∀" <> showName n <> "[" <> pretty x1 <> "] " <> pretty x2
   App x1 x2 ->
     parensIf (ctx == AppRight) $
     prettyAt AppLeft x1 <> " " <> prettyAt AppRight x2
