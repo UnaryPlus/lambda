@@ -20,6 +20,8 @@ import qualified Control.Monad.State as State
 import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.IO as IO
+import Data.Set (Set)
+import qualified Data.Set as Set
 
 import Util (prompt, Parser, symbol, parens, alphaNum, alpha, parensIf)
 
@@ -331,19 +333,35 @@ data Context
   deriving (Eq)
 
 pretty :: Term -> Text
-pretty = prettyAt Outer
+pretty = prettyAt Outer Set.empty
 
-prettyAt :: Context -> Term -> Text
-prettyAt ctx = \case
+prettyAt :: Context -> Set Name -> Term -> Text
+prettyAt ctx env = \case
   Type 0 -> "T"
   Type i -> "T" <> Text.pack (show i)
   Var n -> showName n
-  Lam n x1 x2 ->
-    parensIf (ctx == AppLeft || ctx == AppRight) $
-    "λ" <> showName n <> ":" <> pretty x1 <> ". " <> pretty x2
-  Pi n x1 x2 ->
-    parensIf (ctx == AppLeft || ctx == AppRight) $
-    "∀" <> showName n <> ":" <> pretty x1 <> ". " <> pretty x2
+  Lam n x1 x2 -> prettyAbst ctx env "λ" (n, x1, x2)
+  Pi n x1 x2 -> prettyAbst ctx env "∀" (n, x1, x2)
   App x1 x2 ->
     parensIf (ctx == AppRight) $
-    prettyAt AppLeft x1 <> " " <> prettyAt AppRight x2
+    prettyAt AppLeft env x1 <> " " <> prettyAt AppRight env x2
+
+prettyAbst :: Context -> Set Name -> Text -> (Name, Term, Term) -> Text
+prettyAbst ctx env sym (n, x1, x2) =
+  parensIf (ctx == AppLeft || ctx == AppRight) $
+  sym <> showName n'
+  <> ":" <> parensIf (long x1) (prettyAt Outer env x1)
+  <> ". " <> prettyAt Outer env' x2'
+  where
+    (n', x2') = case n of
+      Name _ -> (n, x2)
+      NameId txt _
+        | Name txt `Set.member` env || Name txt `freeIn` x2 -> (n, x2)
+        | otherwise -> (Name txt, rename n (Name txt) x2)
+    env' = Set.insert n' env
+
+long :: Term -> Bool
+long = \case
+  Type _ -> False
+  Var _ -> False
+  _ -> True
