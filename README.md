@@ -7,7 +7,7 @@ A collection of interpreters, type checkers, and REPLs implemented in Haskell. C
 * Hindley-Milner type system
 * Calculus of constructions
 
-You can access the different REPLs by passing an argument to the executable: "lambda", "sk", "systemf", "hm", or "coc".
+You can access the different REPLs by passing an argument to the executable: "lambda", "sk", "systemf", "hm", or "coc". For more information, read the manuals below.
 
 ## Untyped lambda calculus
 When you enter a term, the interpreter will reduce it to βη-normal form if possible, and display the result. You can use  `\` instead of `λ` for abstractions.
@@ -81,7 +81,7 @@ could not match types:
 You can define named constants using `=`. When you type `x = e` in the repl, this basically adds `{x = e}` before all succeeding inputs. You can also define type synonyms using `~`.
 
 ```
-> nat ~ ∀a. (a -> a) -> a -> a
+> nat ~ ?a. (a -> a) -> a -> a
 > 0 = \a. \f:a -> a. \x:a. x
 > S = \n:nat. \a. \f:a -> a. \x:a. f (n [a] f x)
 > add = \n:nat. \k:nat. n [nat] S k
@@ -91,7 +91,7 @@ You can define named constants using `=`. When you type `x = e` in the repl, thi
 ```
 
 ## Hindley-Milner type system
-Hindley-Milner is a type system that allows a restricted form of parametric polymorphism while not requiring any type annotations&mdash;the type of an expression can always be inferred. Terms (e) and types (τ) are constructed as follows:
+Hindley-Milner is a type system that allows a restricted form of parametric polymorphism while not requiring any type annotations; the type of an expression can always be inferred. Terms (e) and types (τ) are constructed as follows:
 
 ```
 e ::= k           constant
@@ -140,3 +140,51 @@ cannot unify types:
 As in the other REPLs, you can define named constants using `=`.
 
 ## Calculus of constructions
+The calculus of constructions is a typed lambda calculus where the set of types is included in the set of terms. Terms are constructed as follows:
+
+```
+e ::= T               impredicative sort
+    | T1 | T2 | ...   predicative sort
+    | x               variable
+    | λx:e. e         abstraction
+    | ∀x:e. e         dependent product
+    | e e             application
+```
+
+* The impredicative sort `T` is also written `T0`.
+* In the REPL, you can use `\` and `?` instead of `λ` and `∀` respectively.
+* If a bound variable is never used, you can replace it with an underscore, e.g. `λ_:e. e` or `∀_:e. e`
+* As a notational shorthand, you can write `a → b` or `a -> b` instead of `∀_:a. b`.
+
+Informally, the typing rules can be described as follows:
+* `T0 : T1`, `T1 : T2`, `T2 : T3`, and so on.
+* If `x : Ti`, then `x : T(i + 1)`, for all natural numbers i. (In other words, each sort is a supertype of the previous sort.)
+* If `e : b`, then `(λx:a. e) : (∀x:a. b)`.
+* If `a : Ti` and `b : T0`, then `(∀x:a. b) : T0`.
+* If `a : Ti` and `b : Tj` (where j > 0), then `(∀x:a. b) : T(max(i, j))`.
+* If `f : (∀x:a. b)` and `e : a`, then `f e : b[e/x]`.
+
+Anything that is possible in System F is also possible in CoC. In particular, one can work with data types via their church encodings.
+
+```
+> nat = ?a:T. (a -> a) -> a -> a
+> 0 = \a:T. \f:(a -> a). \x:a. x
+> S = \n:nat. \a:T. \f:(a -> a). \x:a. f (n a f x)
+> add = \n:nat. \k:nat. n nat S k
+> add (S (S 0)) (S (S (S 0)))
+: ∀a:T. (a → a) → a → a
+λa:T. λf:(a → a). λx:a. f (f (f (f (f x))))
+```
+
+Unlike in System F, one can define type constructors (functions from types to types), and higher-order type constructors (functions from type constructors to types). In the example below, `vec : natT → T → T` is a higher-order type constructor; `vec n a` creates the cartesian product of `a` with itself `n` times.
+
+```
+> natT = (T -> T) -> T -> T
+> 0T = \f:(T -> T). \a:T. a
+> ST = \n:natT. \f:(T -> T). \a:T. f (n f a)
+> unit = ?a:T. a -> a
+> pair = \a:T. \b:T. ?c:T. (a -> b -> c) -> c
+> vec = \n:natT. \a:T. n (pair a) unit
+```
+
+Without inductive types, it is impossible to create non-trivial functions of type `nat → a`, where `a` has type `T1` or greater. Therefore, to define `vec`, one must create a higher-level natural numbers type (called `natT` above). 
