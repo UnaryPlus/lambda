@@ -222,7 +222,7 @@ equivalent = curry \case
 checkAbst :: (Name, Term, Term) -> (Name, Term, Term) -> (Term -> Term -> CoC ()) -> CoC ()
 checkAbst (n1, x1, y1) (n2, x2, y2) check = do
   equivalent x1 x2
-  temp <- fresh (Name "#")
+  temp <- fresh (Name "")
   let y1' = rename n1 temp y1
   let y2' = rename n2 temp y2
   check y1' y2'
