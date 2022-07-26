@@ -194,31 +194,32 @@ verifyApp :: Term -> Term -> CoC ()
 verifyApp x1 x2 = do
   x1' <- reduce x1
   x2' <- reduce x2
-  test <- validApp x1' x2'
+  test <- includes x1' x2'
   if test then return ()
     else throwError ("could not match terms:\n* "
       <> pretty x1' <> "\n* " <> pretty x2')
 
-validApp :: Term -> Term -> CoC Bool
-validApp = curry \case
+includes :: Term -> Term -> CoC Bool
+includes = curry \case
   (Type i, Type j) -> return (i <= j)
+  (Pi n1 x1 y1, Pi n2 x2 y2) -> checkAbst (n1, x1, y1) (n2, x2, y2) includes
   (x1, x2) -> equivalent x1 x2
 
 equivalent :: Term -> Term -> CoC Bool
 equivalent = curry \case
   (Type i, Type j) -> return (i == j)
   (Var n1, Var n2) -> return (n1 == n2)
-  (Lam n1 x1 y1, Lam n2 x2 y2) -> equivAbst (n1, x1, y1) (n2, x2, y2)
-  (Pi n1 x1 y1, Pi n2 x2 y2) -> equivAbst (n1, x1, y1) (n2, x2, y2)
+  (Lam n1 x1 y1, Lam n2 x2 y2) -> checkAbst (n1, x1, y1) (n2, x2, y2) equivalent
+  (Pi n1 x1 y1, Pi n2 x2 y2) -> checkAbst (n1, x1, y1) (n2, x2, y2) equivalent
   (App x1 y1, App x2 y2) -> (&&) <$> equivalent x1 x2 <*> equivalent y1 y2
   (_, _) -> return False
 
-equivAbst :: (Name, Term, Term) -> (Name, Term, Term) -> CoC Bool
-equivAbst (n1, x1, y1) (n2, x2, y2) = do
+checkAbst :: (Name, Term, Term) -> (Name, Term, Term) -> (Term -> Term -> CoC Bool) -> CoC Bool
+checkAbst (n1, x1, y1) (n2, x2, y2) check = do
   temp <- fresh (Name "#")
   let y1' = rename n1 temp y1
   let y2' = rename n2 temp y2
-  (&&) <$> equivalent x1 x2 <*> equivalent y1' y2'
+  (&&) <$> equivalent x1 x2 <*> check y1' y2'
 
 rename :: Name -> Name -> Term -> Term
 rename n n' = \case
@@ -245,6 +246,7 @@ infer env = \case
     _ <- level =<< infer env x1
     env' <- insertEnv n x1 env
     t2 <- infer env' x2
+    _ <- infer env (Pi n x1 t2) 
     return (Pi n x1 t2)
   Pi n x1 x2 -> do
     i1 <- level =<< infer env x1
