@@ -91,5 +91,52 @@ You can define named constants using `=`. When you type `x = e` in the repl, thi
 ```
 
 ## Hindley-Milner type system
+Hindley-Milner is a type system that allows a restricted form of parametric polymorphism while not requiring any type annotations&mdash;the type of an expression can always be inferred. Terms (e) and types (τ) are constructed as follows:
+
+```
+e ::= k           constant
+    | x           variable
+    | {x = e} e   local definition
+    | λx. e       abstraction
+    | e e         application
+
+τ ::= ι           type constant
+    | τ → τ       function type
+    | α           type variable
+```
+
+Universal quantifiers are not allowed within function types. This means that booleans, numbers, and data structures cannot be encoded in the usual way, and must be built in to the calculus itself. My implementation includes the following type constants (ι) and term constants (k):
+
+```
+ι ::= Int | Bool
+
+k ::= true | false                  : Bool
+    | 0 | 1 | ...                   : Int
+    | and | or                      : Bool → Bool → Bool
+    | not                           : Bool → Bool
+    | if                            : Bool → α → α → α
+    | add | sub | mul | div | mod   : Int → Int → Int
+    | eq | lt | gt                  : Int → Int → Bool
+```
+
+When you enter a term in the REPL, the interpreter prints the inferred type, and then reduces the term to normal form. Type variables are indexed by natural numbers; for example, the type of the identity function is displayed as `0 → 0` or `1 → 1` etc.
+
+```
+> add -2 5
+: Int
+3
+> (\b. \x. if b (add x 1) (sub x 1)) true 5
+: Int
+6
+> \x. \f. f true x
+: 0 → (Bool → 0 → 3) → 3
+λx. λf. f true x
+> (\x. x) false 1
+cannot unify types:
+* Bool
+* Int → 2
+```
+
+As in the other REPLs, you can define named constants using `=`.
 
 ## Calculus of constructions
