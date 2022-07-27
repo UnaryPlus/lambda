@@ -7,7 +7,7 @@ A collection of interpreters, type checkers, and REPLs implemented in Haskell. C
 * Hindley-Milner type system
 * Calculus of constructions
 
-You can access the different REPLs by passing an argument to the executable: "lambda", "sk", "systemf", "hm", or "coc". For more information, read the manuals below.
+You can access the different REPLs by passing an argument to the executable: "lambda", "sk", "systemf", "hm", or "coc". For more information, see the manual below.
 
 ## Untyped lambda calculus
 When you enter a term, the interpreter will reduce it to βη-normal form if possible, and display the result. You can use  `\` instead of `λ` for abstractions.
@@ -64,7 +64,7 @@ e ::= x         variable
     | ∀α. τ     universal quantifier
 ```
 
-In the REPL, you can use `\`, `->`, and `?` instead of `λ`, `→`, and `∀` respectively. You can also create local variables using the syntax `{x = e1} e2`. This syntax is equivalent to `(λx:τ. e2) e1`, where `τ` is the type of `e1`.
+In the REPL, you can use `\`, `->`, and `?` instead of `λ`, `→`, and `∀` respectively. You can also create local variables using the syntax `{x = e1} e2`. This is equivalent to `(λx:τ. e2) e1`, where `τ` is the type of `e1`.
 
 When you enter a well-typed term in the REPL, the term is compiled into the untyped lambda calculus by removing all type annotations. It is then reduced to βη-normal form and printed.
 
