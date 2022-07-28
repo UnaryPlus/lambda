@@ -1,23 +1,31 @@
-cabal-version:      2.4
-name:               lambda
-version:            0.1.0.0
-author:             UnaryPlus
-maintainer:         ombspring@gmail.com
+cabal-version: 2.4
+name:          lambda
+version:       0.1.0.0
+author:        Owen Bechtel
+maintainer:    ombspring@gmail.com
 
+synopsis: Interpreters for lambda calculus, calculus of constructions, and other languages
+
+homepage:           https://github.com/UnaryPlus/lambda
+bug-reports:        https://github.com/UnaryPlus/lambda/issues
 license:            MIT
 license-file:       LICENSE
--- extra-source-files: README.md
+extra-source-files: CHANGELOG.md, README.md
+
+source-repository head
+  type:     git
+  location: https://github.com/UnaryPlus/lambda.git
 
 executable lambda
     hs-source-dirs:   app
+    default-language: Haskell2010
+    ghc-options:      -Wall
     main-is:          Main.hs
     other-modules:    Util, Lambda, CoC, SystemF, SK, HM
 
-    build-depends:    base ^>=4.14.1.0,
-                      parsec,
-                      text,
-                      containers,
-                      mtl
-
-    default-language: Haskell2010
-    ghc-options:      -Wall
+    build-depends:
+      base >= 4.11 && < 5,
+      parsec >= 3.1.6 && < 3.2,
+      text >= 0.7 && < 2.1,
+      containers >= 0.5 && < 0.7,
+      mtl >= 2.2.1 && < 2.3

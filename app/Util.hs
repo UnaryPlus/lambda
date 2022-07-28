@@ -18,7 +18,7 @@ import Data.Char (isAsciiUpper, isAsciiLower, isDigit)
 import Data.Text (Text)
 import qualified Data.Text.IO as IO
 
-import Text.Parsec (Parsec, between, char, satisfy, spaces, between)
+import Text.Parsec (Parsec, between, char, satisfy, spaces)
 
 prompt :: IO Text
 prompt = IO.putStr "> " >> hFlush stdout >> IO.getLine
