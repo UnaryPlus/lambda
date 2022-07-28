@@ -4,6 +4,7 @@ version:       0.1.0.0
 author:        Owen Bechtel
 maintainer:    ombspring@gmail.com
 
+category: Compilers/Interpreters
 synopsis: Interpreters for lambda calculus, calculus of constructions, and other languages
 
 homepage:           https://github.com/UnaryPlus/lambda
