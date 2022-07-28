@@ -7,7 +7,7 @@ A collection of interpreters, type checkers, and REPLs implemented in Haskell. C
 * Hindley-Milner type system
 * Calculus of constructions
 
-To install, run `cabal install lambda`. You can access the different REPLs by passing an argument to the executable: "lambda", "sk", "systemf", "hm", or "coc". For more information, see the manual below.
+You can access the different REPLs by passing an argument to the executable: "lambda", "sk", "systemf", "hm", or "coc". For more information, see the manual below.
 
 ## Untyped lambda calculus
 When you enter a term, the interpreter will reduce it to βη-normal form if possible, and display the result. You can use  `\` instead of `λ` for abstractions.
